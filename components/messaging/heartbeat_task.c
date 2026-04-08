@@ -18,7 +18,7 @@ static volatile uint32_t s_interval_s = APP_HEARTBEAT_INTERVAL_S;
 
 static void heartbeat_task(void *arg)
 {
-    char payload[APP_PAYLOAD_MAX_LEN];
+    char payload[APP_JSON_PAYLOAD_MAX_LEN];
     char ip_address[16];
 
     while (true) {

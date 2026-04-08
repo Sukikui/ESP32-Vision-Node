@@ -13,4 +13,94 @@ menu "Application Configuration"
         help
             Period between heartbeat publications on the status topic.
 
+    config APP_MQTT_BROKER_PORT
+        int "MQTT broker port"
+        range 1 65535
+        default 1883
+        help
+            TCP port used to connect to the MQTT broker running on the
+            Raspberry Pi.
+
+    config APP_TOPIC_MAX_LEN
+        int "MQTT topic buffer length"
+        range 32 512
+        default 128
+        help
+            Maximum length for topic strings built by the firmware.
+
+    config APP_JSON_PAYLOAD_MAX_LEN
+        int "JSON payload buffer length"
+        range 64 4096
+        default 384
+        help
+            Maximum length for small JSON payloads such as heartbeat, event,
+            reply, image meta, and image done payloads.
+
+    config APP_REQUEST_ID_MAX_LEN
+        int "Request ID max length"
+        range 8 256
+        default 64
+        help
+            Maximum length for request identifiers extracted from command
+            payloads.
+
+    config APP_PUBLISH_QUEUE_LENGTH
+        int "Publish queue length"
+        range 1 64
+        default 12
+        help
+            Maximum number of outgoing MQTT messages buffered in RAM.
+
+    config APP_PUBLISH_MAX_DATA_LEN
+        int "Publish queue item max payload length"
+        range 256 16384
+        default 2048
+        help
+            Maximum number of payload bytes stored in one queued MQTT message.
+
+    config APP_IMAGE_CHUNK_SIZE
+        int "Image chunk size"
+        range 1 APP_PUBLISH_MAX_DATA_LEN
+        default 2048
+        help
+            Maximum number of image bytes sent in one MQTT chunk.
+
+    config APP_MOTION_DETECTION_ENABLED
+        bool "Enable PIR motion detection"
+        default n
+        help
+            Enable a PIR sensor connected to a GPIO input. When motion is
+            detected, the firmware publishes the motion_detected event over MQTT.
+
+    config APP_MOTION_PIR_GPIO
+        int "PIR GPIO number"
+        default 10
+        depends on APP_MOTION_DETECTION_ENABLED
+        help
+            GPIO connected to the PIR module digital output.
+
+    config APP_MOTION_PIR_ACTIVE_HIGH
+        bool "PIR output is active high"
+        default y
+        depends on APP_MOTION_DETECTION_ENABLED
+        help
+            Enable if the PIR module drives the GPIO high on motion detection.
+
+    config APP_MOTION_WARMUP_MS
+        int "PIR warm-up time (ms)"
+        range 0 120000
+        default 30000
+        depends on APP_MOTION_DETECTION_ENABLED
+        help
+            Initial warm-up period after the detector starts, during which
+            triggers are ignored.
+
+    config APP_MOTION_COOLDOWN_MS
+        int "PIR cooldown time (ms)"
+        range 0 60000
+        default 5000
+        depends on APP_MOTION_DETECTION_ENABLED
+        help
+            Minimum delay between two accepted motion triggers.
+
 endmenu

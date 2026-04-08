@@ -18,8 +18,8 @@ static const char *TAG = "mqtt_service";
 
 static esp_mqtt_client_handle_t s_client;
 static bool s_connected;
-static char s_online_payload[APP_PAYLOAD_MAX_LEN];
-static char s_offline_payload[APP_PAYLOAD_MAX_LEN];
+static char s_online_payload[APP_JSON_PAYLOAD_MAX_LEN];
+static char s_offline_payload[APP_JSON_PAYLOAD_MAX_LEN];
 static char s_broker_uri[APP_TOPIC_MAX_LEN];
 
 static esp_err_t build_presence_payloads(void)

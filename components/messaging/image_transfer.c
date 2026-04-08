@@ -10,8 +10,8 @@
 esp_err_t image_transfer_publish(const char *capture_id, const void *data, size_t data_len, const char *content_type)
 {
     char topic[APP_TOPIC_MAX_LEN];
-    char meta_payload[APP_PAYLOAD_MAX_LEN];
-    char done_payload[APP_PAYLOAD_MAX_LEN];
+    char meta_payload[APP_JSON_PAYLOAD_MAX_LEN];
+    char done_payload[APP_JSON_PAYLOAD_MAX_LEN];
     const uint8_t *bytes = (const uint8_t *)data;
     const char *mime_type = (content_type != NULL && content_type[0] != '\0') ? content_type : "application/octet-stream";
     size_t chunk_count;

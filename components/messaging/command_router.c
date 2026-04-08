@@ -22,7 +22,7 @@ static const char *TAG = "command_router";
 
 typedef struct {
     char reply_topic[APP_TOPIC_MAX_LEN];
-    char payload[APP_PAYLOAD_MAX_LEN];
+    char payload[APP_JSON_PAYLOAD_MAX_LEN];
 } reboot_task_args_t;
 
 static void copy_text_or_empty(char *buffer, size_t buffer_len, const char *data, int data_len)
@@ -169,7 +169,7 @@ static esp_err_t publish_reply(const char *request_id, const char *payload, bool
 
 static void handle_ping_command(const char *request_id)
 {
-    char payload[APP_PAYLOAD_MAX_LEN];
+    char payload[APP_JSON_PAYLOAD_MAX_LEN];
     char ip_address[16];
     const char *eth_state = ethernet_service_is_up() ? "up" : "down";
     uint64_t uptime_s = (uint64_t)(esp_timer_get_time() / 1000000ULL);
@@ -195,7 +195,7 @@ static void handle_ping_command(const char *request_id)
 
 static void handle_config_command(const char *request_id, const char *payload_in)
 {
-    char payload[APP_PAYLOAD_MAX_LEN];
+    char payload[APP_JSON_PAYLOAD_MAX_LEN];
     uint32_t heartbeat_interval_s = 0;
     bool updated = false;
     esp_err_t err = ESP_OK;
@@ -232,7 +232,7 @@ static void handle_config_command(const char *request_id, const char *payload_in
 
 static void handle_capture_command(const char *request_id)
 {
-    char payload[APP_PAYLOAD_MAX_LEN];
+    char payload[APP_JSON_PAYLOAD_MAX_LEN];
 
     snprintf(payload,
              sizeof(payload),
@@ -274,7 +274,7 @@ static void handle_reboot_command(const char *request_id)
 void command_router_handle(const char *topic, int topic_len, const char *data, int data_len)
 {
     char topic_buffer[APP_TOPIC_MAX_LEN];
-    char payload_buffer[APP_PAYLOAD_MAX_LEN];
+    char payload_buffer[APP_JSON_PAYLOAD_MAX_LEN];
     char request_id[APP_REQUEST_ID_MAX_LEN];
 
     copy_text_or_empty(topic_buffer, sizeof(topic_buffer), topic, topic_len);

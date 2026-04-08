@@ -10,7 +10,7 @@
 
 esp_err_t node_event_publish(const char *event_name)
 {
-    char payload[APP_PAYLOAD_MAX_LEN];
+    char payload[APP_JSON_PAYLOAD_MAX_LEN];
     uint64_t timestamp_ms = (uint64_t)(esp_timer_get_time() / 1000ULL);
     int written;
 
