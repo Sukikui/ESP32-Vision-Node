@@ -8,6 +8,7 @@
 #include "mqtt_service.h"
 #include "topic_map.h"
 
+/* Build a small JSON event payload and publish it on the shared node event topic. */
 esp_err_t node_event_publish(const char *event_name)
 {
     char payload[APP_JSON_PAYLOAD_MAX_LEN];
@@ -18,6 +19,7 @@ esp_err_t node_event_publish(const char *event_name)
         return ESP_ERR_INVALID_ARG;
     }
 
+    /* The timestamp is captured locally so subscribers can order events even if delivery is delayed. */
     written = snprintf(payload,
                        sizeof(payload),
                        "{\"node_id\":\"%s\",\"event\":\"%s\",\"timestamp_ms\":%" PRIu64 "}",

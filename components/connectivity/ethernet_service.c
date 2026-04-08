@@ -15,6 +15,7 @@
 #include "freertos/event_groups.h"
 #include "lwip/ip4_addr.h"
 
+/* Event-group bits used by the rest of the firmware to observe link and DHCP state. */
 #define ETH_STARTED_BIT BIT0
 #define ETH_LINK_UP_BIT BIT1
 #define ETH_GOT_IP_BIT BIT2
@@ -31,6 +32,7 @@
 #define ETH_RMII_RXD0_GPIO 29
 #define ETH_RMII_RXD1_GPIO 30
 
+/* Ethernet service for the Waveshare ESP32-P4-ETH board and its fixed RMII wiring. */
 static const char *TAG = "ethernet_service";
 
 typedef struct {
@@ -43,6 +45,7 @@ typedef struct {
 
 static ethernet_service_state_t s_state;
 
+/* Mirror ESP-IDF Ethernet events into local state bits and logs. */
 static void eth_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     uint8_t mac_addr[6] = {0};
@@ -73,6 +76,7 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base, int32_t ev
     }
 }
 
+/* Remember that DHCP succeeded and log the IP, mask, and gateway assigned to the interface. */
 static void got_ip_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
@@ -86,6 +90,7 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base, int32_t
     ESP_LOGI(TAG, "ETHGW:" IPSTR, IP2STR(&ip_info->gw));
 }
 
+/* Build the ESP32-P4 internal EMAC + IP101 PHY pair with the board-specific RMII pin mapping. */
 static esp_err_t ethernet_driver_create(esp_eth_handle_t *out_handle)
 {
     esp_eth_mac_t *mac = NULL;
@@ -132,6 +137,7 @@ static esp_err_t ethernet_driver_create(esp_eth_handle_t *out_handle)
     return ESP_OK;
 }
 
+/* Create the Ethernet driver stack and register the event handlers that feed local state. */
 esp_err_t ethernet_service_init(void)
 {
     if (s_state.initialized) {
@@ -152,6 +158,10 @@ esp_err_t ethernet_service_init(void)
     s_state.glue = esp_eth_new_netif_glue(s_state.handle);
     ESP_RETURN_ON_FALSE(s_state.glue != NULL, ESP_ERR_NO_MEM, TAG, "failed to create Ethernet netif glue");
 
+    /*
+     * Attach the driver to esp_netif and register both Ethernet and IP handlers.
+     * Higher-level modules only consume the coarse state exposed by this service.
+     */
     ESP_RETURN_ON_ERROR(esp_netif_attach(s_state.netif, s_state.glue), TAG, "failed to attach Ethernet netif");
     ESP_RETURN_ON_ERROR(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, eth_event_handler, NULL),
                         TAG, "failed to register Ethernet event handler");
@@ -162,12 +172,14 @@ esp_err_t ethernet_service_init(void)
     return ESP_OK;
 }
 
+/* Start the Ethernet state machine. */
 esp_err_t ethernet_service_start(void)
 {
     ESP_RETURN_ON_FALSE(s_state.initialized, ESP_ERR_INVALID_STATE, TAG, "Ethernet service not initialized");
     return esp_eth_start(s_state.handle);
 }
 
+/* Block on the event-group bit that is set by the DHCP success callback. */
 esp_err_t ethernet_service_wait_for_ip(TickType_t timeout_ticks)
 {
     ESP_RETURN_ON_FALSE(s_state.initialized, ESP_ERR_INVALID_STATE, TAG, "Ethernet service not initialized");
@@ -182,11 +194,13 @@ esp_err_t ethernet_service_wait_for_ip(TickType_t timeout_ticks)
     return (bits & ETH_GOT_IP_BIT) ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
+/* Keep a short alias for older call sites that still ask for "is_up". */
 bool ethernet_service_is_up(void)
 {
     return ethernet_service_is_link_up();
 }
 
+/* Return the current physical link state. */
 bool ethernet_service_is_link_up(void)
 {
     if (s_state.event_group == NULL) {
@@ -197,6 +211,7 @@ bool ethernet_service_is_link_up(void)
     return (bits & ETH_LINK_UP_BIT) != 0;
 }
 
+/* Read the current IPv4 address from esp_netif and format it as dotted-decimal text. */
 esp_err_t ethernet_service_get_ipv4_string(char *buffer, size_t buffer_len)
 {
     esp_netif_ip_info_t ip_info = {0};
@@ -215,6 +230,7 @@ esp_err_t ethernet_service_get_ipv4_string(char *buffer, size_t buffer_len)
     return ESP_OK;
 }
 
+/* Read the current default gateway from esp_netif and format it as dotted-decimal text. */
 esp_err_t ethernet_service_get_gateway_string(char *buffer, size_t buffer_len)
 {
     esp_netif_ip_info_t ip_info = {0};
@@ -230,6 +246,7 @@ esp_err_t ethernet_service_get_gateway_string(char *buffer, size_t buffer_len)
 
     ESP_RETURN_ON_ERROR(esp_netif_get_ip_info(s_state.netif, &ip_info), TAG, "failed to get IP info");
 
+    /* A zero gateway means DHCP has not provided a usable central-unit address yet. */
     if (ip4_addr_isany_val(ip_info.gw)) {
         snprintf(buffer, buffer_len, "0.0.0.0");
         return ESP_ERR_NOT_FOUND;

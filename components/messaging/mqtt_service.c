@@ -14,6 +14,7 @@
 #include "publish_queue.h"
 #include "topic_map.h"
 
+/* Own the esp-mqtt client, its callbacks, and the publish helpers used by the rest of the firmware. */
 static const char *TAG = "mqtt_service";
 
 static esp_mqtt_client_handle_t s_client;
@@ -22,6 +23,7 @@ static char s_online_payload[APP_JSON_PAYLOAD_MAX_LEN];
 static char s_offline_payload[APP_JSON_PAYLOAD_MAX_LEN];
 static char s_broker_uri[APP_TOPIC_MAX_LEN];
 
+/* Fill the static JSON buffers used for retained online state and Last Will offline state. */
 static esp_err_t build_presence_payloads(void)
 {
     int written;
@@ -47,6 +49,7 @@ static esp_err_t build_presence_payloads(void)
     return ESP_OK;
 }
 
+/* Publish the retained online payload on status/online as soon as the broker accepts the session. */
 static esp_err_t mqtt_publish_presence_online(esp_mqtt_client_handle_t client)
 {
     int msg_id = esp_mqtt_client_publish(
@@ -66,6 +69,7 @@ static esp_err_t mqtt_publish_presence_online(esp_mqtt_client_handle_t client)
     return ESP_OK;
 }
 
+/* Read the DHCP gateway from Ethernet and turn it into mqtt://<gateway>:<port>. */
 static esp_err_t build_broker_uri_from_gateway(void)
 {
     char gateway_ip[16];
@@ -82,6 +86,7 @@ static esp_err_t build_broker_uri_from_gateway(void)
     return ESP_OK;
 }
 
+/* Process esp-mqtt callbacks and forward command payloads to the command router. */
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
     esp_mqtt_event_handle_t event = event_data;
@@ -92,6 +97,10 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         s_connected = true;
         ESP_LOGI(TAG, "MQTT connected");
         mqtt_publish_presence_online(client);
+        /*
+         * Subscribe only after CONNECT succeeds.
+         * Before that point the broker has no session for this client, so subscriptions would not exist yet.
+         */
         esp_mqtt_client_subscribe(client, topic_map_get_command_subscription_topic(), 1);
         esp_mqtt_client_subscribe(client, topic_map_get_broadcast_subscription_topic(), 1);
         break;
@@ -110,6 +119,10 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         break;
 
     case MQTT_EVENT_DATA:
+        /*
+         * esp-mqtt gives the topic and payload as pointer + length pairs.
+         * The router is responsible for copying them into NUL-terminated local buffers before parsing.
+         */
         ESP_LOGI(TAG, "MQTT data on topic %.*s", event->topic_len, event->topic);
         command_router_handle(event->topic, event->topic_len, event->data, event->data_len);
         break;
@@ -134,6 +147,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     }
 }
 
+/* Build the broker URI, configure Last Will, and create the esp-mqtt client instance. */
 esp_err_t mqtt_service_init(void)
 {
     if (s_client != NULL) {
@@ -147,6 +161,7 @@ esp_err_t mqtt_service_init(void)
         .broker.address.uri = s_broker_uri,
         .network.disable_auto_reconnect = false,
         .credentials.client_id = topic_map_get_node_id(),
+        /* The broker publishes this payload if the TCP/MQTT session disappears unexpectedly. */
         .session.last_will.topic = topic_map_get_status_online_topic(),
         .session.last_will.msg = s_offline_payload,
         .session.last_will.msg_len = strlen(s_offline_payload),
@@ -161,32 +176,38 @@ esp_err_t mqtt_service_init(void)
     return esp_mqtt_client_register_event(s_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
 }
 
+/* Start the MQTT client event loop and TCP connection attempts. */
 esp_err_t mqtt_service_start(void)
 {
     ESP_RETURN_ON_FALSE(s_client != NULL, ESP_ERR_INVALID_STATE, TAG, "MQTT client not initialized");
     return esp_mqtt_client_start(s_client);
 }
 
+/* Report whether the broker session is currently connected. */
 bool mqtt_service_is_connected(void)
 {
     return s_connected;
 }
 
+/* Convert one NUL-terminated JSON string into bytes and enqueue it for publication. */
 esp_err_t mqtt_service_publish_json(const char *topic, const char *json, int qos, bool retain)
 {
     return mqtt_service_publish_bytes(topic, json, json != NULL ? strlen(json) : 0, qos, retain);
 }
 
+/* Enqueue one arbitrary payload so the publish queue task can send it later. */
 esp_err_t mqtt_service_publish_bytes(const char *topic, const void *data, size_t data_len, int qos, bool retain)
 {
     return publish_queue_push(topic, data, data_len, qos, retain);
 }
 
+/* Publish one JSON payload immediately instead of routing it through the queue worker. */
 esp_err_t mqtt_service_publish_immediate_json(const char *topic, const char *json, int qos, bool retain)
 {
     return mqtt_service_publish_immediate_bytes(topic, json, json != NULL ? strlen(json) : 0, qos, retain);
 }
 
+/* Publish one payload directly through esp-mqtt and fail immediately if the session is down. */
 esp_err_t mqtt_service_publish_immediate_bytes(const char *topic, const void *data, size_t data_len, int qos, bool retain)
 {
     int msg_id;
@@ -194,6 +215,10 @@ esp_err_t mqtt_service_publish_immediate_bytes(const char *topic, const void *da
     ESP_RETURN_ON_FALSE(topic != NULL, ESP_ERR_INVALID_ARG, TAG, "topic is required");
     ESP_RETURN_ON_FALSE(s_client != NULL, ESP_ERR_INVALID_STATE, TAG, "MQTT client not initialized");
 
+    /*
+     * Immediate publications are used for cases where the caller expects a fast answer, for example
+     * command replies. If the session is down, returning an error is clearer than silently queueing it here.
+     */
     if (!s_connected) {
         ESP_LOGD(TAG, "dropping publish while MQTT is disconnected: %s", topic);
         return ESP_ERR_INVALID_STATE;

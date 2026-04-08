@@ -12,10 +12,12 @@
 #include "mqtt_service.h"
 #include "topic_map.h"
 
+/* Periodically publish a compact heartbeat describing basic node state. */
 static const char *TAG = "heartbeat_task";
 static TaskHandle_t s_task_handle;
 static volatile uint32_t s_interval_s = APP_HEARTBEAT_INTERVAL_S;
 
+/* Build one JSON heartbeat payload and publish it forever at the configured interval. */
 static void heartbeat_task(void *arg)
 {
     char payload[APP_JSON_PAYLOAD_MAX_LEN];
@@ -26,6 +28,7 @@ static void heartbeat_task(void *arg)
 
         ethernet_service_get_ipv4_string(ip_address, sizeof(ip_address));
 
+        /* Heartbeats are intentionally compact because this message is emitted for the whole lifetime of the node. */
         if (snprintf(
                 payload,
                 sizeof(payload),
@@ -42,6 +45,7 @@ static void heartbeat_task(void *arg)
     }
 }
 
+/* Start the heartbeat worker once. */
 esp_err_t heartbeat_task_start(void)
 {
     if (s_task_handle != NULL) {
@@ -57,6 +61,7 @@ esp_err_t heartbeat_task_start(void)
     return ESP_OK;
 }
 
+/* Update the live heartbeat period used by the running task. */
 esp_err_t heartbeat_task_set_interval_s(uint32_t interval_s)
 {
     if (interval_s == 0 || interval_s > 3600) {
@@ -67,6 +72,7 @@ esp_err_t heartbeat_task_set_interval_s(uint32_t interval_s)
     return ESP_OK;
 }
 
+/* Return the currently active heartbeat period. */
 uint32_t heartbeat_task_get_interval_s(void)
 {
     return s_interval_s;

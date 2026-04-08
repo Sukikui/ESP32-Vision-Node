@@ -15,6 +15,7 @@
 
 ESP_EVENT_DEFINE_BASE(MOTION_DETECTION_EVENT);
 
+/* PIR detection built around one GPIO interrupt and one worker task. */
 static const char *TAG = "motion_detection";
 
 typedef struct {
@@ -27,6 +28,7 @@ typedef struct {
 
 static motion_detection_state_t s_state;
 
+/* IRQ handler: only wake the worker task and leave all timing logic outside interrupt context. */
 static void IRAM_ATTR motion_detection_isr_handler(void *arg)
 {
     BaseType_t task_woken = pdFALSE;
@@ -37,6 +39,7 @@ static void IRAM_ATTR motion_detection_isr_handler(void *arg)
     }
 }
 
+/* Post one accepted trigger timestamp onto the default ESP event loop. */
 static esp_err_t motion_detection_publish_trigger(int64_t timestamp_us)
 {
     return esp_event_post(
@@ -47,6 +50,7 @@ static esp_err_t motion_detection_publish_trigger(int64_t timestamp_us)
         pdMS_TO_TICKS(100));
 }
 
+/* Consume raw PIR edges and filter them through warm-up and cooldown rules. */
 static void motion_detection_task(void *arg)
 {
     const int64_t cooldown_us = (int64_t)APP_MOTION_COOLDOWN_MS * 1000LL;
@@ -59,11 +63,13 @@ static void motion_detection_task(void *arg)
         }
 
         int64_t now_us = esp_timer_get_time();
+        /* Ignore edges while the PIR is still stabilizing after startup. */
         if (now_us < s_state.warmup_until_us) {
             ESP_LOGD(TAG, "ignoring PIR trigger during warm-up");
             continue;
         }
 
+        /* Ignore edges that arrive too soon after the previous accepted detection. */
         if (cooldown_us > 0 && s_state.last_trigger_us > 0 && (now_us - s_state.last_trigger_us) < cooldown_us) {
             ESP_LOGD(TAG, "ignoring PIR trigger during cooldown");
             continue;
@@ -78,6 +84,7 @@ static void motion_detection_task(void *arg)
     }
 }
 
+/* Configure the PIR GPIO, hook its ISR, and create the worker task that evaluates triggers. */
 esp_err_t motion_detection_init(void)
 {
     gpio_config_t io_config = {0};
@@ -107,6 +114,7 @@ esp_err_t motion_detection_init(void)
 
     ESP_RETURN_ON_ERROR(gpio_config(&io_config), TAG, "failed to configure PIR GPIO");
 
+    /* The GPIO ISR service is global in ESP-IDF, so "already installed" is not an error here. */
     err = gpio_install_isr_service(0);
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         return err;
@@ -125,6 +133,7 @@ esp_err_t motion_detection_init(void)
     return ESP_OK;
 }
 
+/* Arm the detector and remember when the warm-up window will end. */
 esp_err_t motion_detection_start(void)
 {
     if (!APP_MOTION_DETECTION_ENABLED) {
@@ -149,11 +158,13 @@ esp_err_t motion_detection_start(void)
     return ESP_OK;
 }
 
+/* Report whether PIR support is enabled at build time. */
 bool motion_detection_is_enabled(void)
 {
     return APP_MOTION_DETECTION_ENABLED;
 }
 
+/* Report whether PIR detection has finished warm-up and can emit events. */
 bool motion_detection_is_armed(void)
 {
     if (!APP_MOTION_DETECTION_ENABLED || !s_state.started) {
@@ -163,6 +174,7 @@ bool motion_detection_is_armed(void)
     return esp_timer_get_time() >= s_state.warmup_until_us;
 }
 
+/* Return the timestamp of the last accepted trigger for diagnostics. */
 int64_t motion_detection_get_last_trigger_us(void)
 {
     return s_state.last_trigger_us;

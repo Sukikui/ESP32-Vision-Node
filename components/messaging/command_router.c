@@ -18,6 +18,7 @@
 #include "node_event.h"
 #include "topic_map.h"
 
+/* Parse MQTT command payloads and dispatch them to the matching control-plane handlers. */
 static const char *TAG = "command_router";
 
 typedef struct {
@@ -25,6 +26,7 @@ typedef struct {
     char payload[APP_JSON_PAYLOAD_MAX_LEN];
 } reboot_task_args_t;
 
+/* Copy a pointer + length pair into a local NUL-terminated C string buffer. */
 static void copy_text_or_empty(char *buffer, size_t buffer_len, const char *data, int data_len)
 {
     size_t copy_len = 0;
@@ -48,6 +50,10 @@ static void copy_text_or_empty(char *buffer, size_t buffer_len, const char *data
     buffer[copy_len] = '\0';
 }
 
+/*
+ * Extract one JSON string field using a tiny hand-written parser.
+ * Command payloads stay deliberately small and flat, so this avoids pulling a full JSON dependency.
+ */
 static bool extract_json_string_field(const char *payload, const char *field_name, char *buffer, size_t buffer_len)
 {
     char pattern[32];
@@ -91,6 +97,7 @@ static bool extract_json_string_field(const char *payload, const char *field_nam
     return true;
 }
 
+/* Extract one unsigned integer field from the same small top-level JSON command payload. */
 static bool extract_json_u32_field(const char *payload, const char *field_name, uint32_t *value)
 {
     char pattern[32];
@@ -131,6 +138,7 @@ static bool extract_json_u32_field(const char *payload, const char *field_name, 
     return true;
 }
 
+/* Read the request_id field used to choose the reply topic for this command. */
 static void extract_request_id(const char *payload, char *request_id, size_t request_id_len)
 {
     if (request_id_len == 0) {
@@ -146,6 +154,7 @@ static void extract_request_id(const char *payload, char *request_id, size_t req
     extract_json_string_field(payload, "request_id", request_id, request_id_len);
 }
 
+/* Run reboot asynchronously so the reply message has time to leave the device before restart. */
 static void reboot_task(void *arg)
 {
     reboot_task_args_t *task_args = (reboot_task_args_t *)arg;
@@ -156,6 +165,7 @@ static void reboot_task(void *arg)
     esp_restart();
 }
 
+/* Build vision/nodes/{node_id}/reply/{request_id} and publish the reply payload on it. */
 static esp_err_t publish_reply(const char *request_id, const char *payload, bool immediate)
 {
     char reply_topic[APP_TOPIC_MAX_LEN];
@@ -167,6 +177,7 @@ static esp_err_t publish_reply(const char *request_id, const char *payload, bool
         : mqtt_service_publish_json(reply_topic, payload, 1, false);
 }
 
+/* Build and publish a point-in-time state snapshot in response to cmd/ping. */
 static void handle_ping_command(const char *request_id)
 {
     char payload[APP_JSON_PAYLOAD_MAX_LEN];
@@ -193,6 +204,7 @@ static void handle_ping_command(const char *request_id)
     }
 }
 
+/* Apply the currently supported runtime configuration keys from cmd/config. */
 static void handle_config_command(const char *request_id, const char *payload_in)
 {
     char payload[APP_JSON_PAYLOAD_MAX_LEN];
@@ -200,6 +212,10 @@ static void handle_config_command(const char *request_id, const char *payload_in
     bool updated = false;
     esp_err_t err = ESP_OK;
 
+    /*
+     * Only the currently supported config keys are parsed here.
+     * Unknown keys are ignored so the command stays forward-compatible while the firmware grows.
+     */
     if (extract_json_u32_field(payload_in, "heartbeat_interval_s", &heartbeat_interval_s)) {
         err = heartbeat_task_set_interval_s(heartbeat_interval_s);
         updated = (err == ESP_OK);
@@ -230,6 +246,7 @@ static void handle_config_command(const char *request_id, const char *payload_in
     }
 }
 
+/* Return a deterministic failure until a real camera capture path exists. */
 static void handle_capture_command(const char *request_id)
 {
     char payload[APP_JSON_PAYLOAD_MAX_LEN];
@@ -245,6 +262,7 @@ static void handle_capture_command(const char *request_id)
     }
 }
 
+/* Prepare the reboot reply payload and hand the actual restart to a dedicated task. */
 static void handle_reboot_command(const char *request_id)
 {
     reboot_task_args_t *task_args = calloc(1, sizeof(*task_args));
@@ -271,16 +289,19 @@ static void handle_reboot_command(const char *request_id)
     }
 }
 
+/* Normalize one incoming MQTT message into local strings, then dispatch it by topic. */
 void command_router_handle(const char *topic, int topic_len, const char *data, int data_len)
 {
     char topic_buffer[APP_TOPIC_MAX_LEN];
     char payload_buffer[APP_JSON_PAYLOAD_MAX_LEN];
     char request_id[APP_REQUEST_ID_MAX_LEN];
 
+    /* esp-mqtt gives raw buffers plus lengths; copy them before using string APIs like strstr/strcmp. */
     copy_text_or_empty(topic_buffer, sizeof(topic_buffer), topic, topic_len);
     copy_text_or_empty(payload_buffer, sizeof(payload_buffer), data, data_len);
     extract_request_id(payload_buffer, request_id, sizeof(request_id));
 
+    /* Every command reply topic is derived from request_id, so commands without it are rejected. */
     if (request_id[0] == '\0') {
         ESP_LOGW(TAG, "ignoring command without JSON request_id on topic: %s", topic_buffer);
         return;
