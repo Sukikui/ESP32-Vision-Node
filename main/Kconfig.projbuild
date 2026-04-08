@@ -1,0 +1,16 @@
+menu "Application Configuration"
+
+    config APP_NODE_ID
+        string "Node ID"
+        default "p4-001"
+        help
+            Unique MQTT node identifier used in topics and payloads.
+
+    config APP_HEARTBEAT_INTERVAL_S
+        int "Heartbeat interval (seconds)"
+        range 1 3600
+        default 30
+        help
+            Period between heartbeat publications on the status topic.
+
+endmenu
