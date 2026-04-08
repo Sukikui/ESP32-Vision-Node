@@ -30,6 +30,6 @@ direct_dependencies:
 - espressif/ip101
 - espressif/mqtt
 - idf
-manifest_hash: 0bae53a4384101161a9eb4b682e675ab7b17e4ac32c4b522b58051f52b8d558c
+manifest_hash: 37d038b6272f20ae6689a6c089837940b8d63f0aab241bf3a7358466dd0a4b4b
 target: esp32p4
 version: 3.0.0
