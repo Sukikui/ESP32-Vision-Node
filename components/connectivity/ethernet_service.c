@@ -194,23 +194,6 @@ esp_err_t ethernet_service_wait_for_ip(TickType_t timeout_ticks)
     return (bits & ETH_GOT_IP_BIT) ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
-/* Keep a short alias for older call sites that still ask for "is_up". */
-bool ethernet_service_is_up(void)
-{
-    return ethernet_service_is_link_up();
-}
-
-/* Return the current physical link state. */
-bool ethernet_service_is_link_up(void)
-{
-    if (s_state.event_group == NULL) {
-        return false;
-    }
-
-    EventBits_t bits = xEventGroupGetBits(s_state.event_group);
-    return (bits & ETH_LINK_UP_BIT) != 0;
-}
-
 /* Read the current IPv4 address from esp_netif and format it as dotted-decimal text. */
 esp_err_t ethernet_service_get_ipv4_string(char *buffer, size_t buffer_len)
 {

@@ -182,7 +182,6 @@ static void handle_ping_command(const char *request_id)
 {
     char payload[APP_JSON_PAYLOAD_MAX_LEN];
     char ip_address[16];
-    const char *eth_state = ethernet_service_is_up() ? "up" : "down";
     uint64_t uptime_s = (uint64_t)(esp_timer_get_time() / 1000000ULL);
 
     ethernet_service_get_ipv4_string(ip_address, sizeof(ip_address));
@@ -190,9 +189,8 @@ static void handle_ping_command(const char *request_id)
     if (snprintf(
             payload,
             sizeof(payload),
-            "{\"node_id\":\"%s\",\"ok\":true,\"eth\":\"%s\",\"ip\":\"%s\",\"uptime_s\":%" PRIu64 "}",
+            "{\"node_id\":\"%s\",\"ok\":true,\"ip\":\"%s\",\"uptime_s\":%" PRIu64 "}",
             topic_map_get_node_id(),
-            eth_state,
             ip_address,
             uptime_s) >= (int)sizeof(payload)) {
         ESP_LOGE(TAG, "ping reply payload too large");

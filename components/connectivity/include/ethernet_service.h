@@ -15,12 +15,6 @@ esp_err_t ethernet_service_start(void);
 /* Block until an IPv4 address is acquired or the timeout expires. */
 esp_err_t ethernet_service_wait_for_ip(TickType_t timeout_ticks);
 
-/* Backward-compatible alias for ethernet_service_is_link_up(). */
-bool ethernet_service_is_up(void);
-
-/* Return true when the physical Ethernet link is up. */
-bool ethernet_service_is_link_up(void);
-
 /* Format the current IPv4 address as dotted decimal text. */
 esp_err_t ethernet_service_get_ipv4_string(char *buffer, size_t buffer_len);
 
