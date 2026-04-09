@@ -14,11 +14,14 @@ ESP_EVENT_DECLARE_BASE(MOTION_DETECTION_EVENT);
 /* Configure the PIR GPIO, ISR, and worker task. */
 esp_err_t motion_detection_init(void);
 
-/* Arm PIR detection after initialization and start the warm-up timer. */
+/* Apply the current runtime config and arm PIR detection if it is enabled. */
 esp_err_t motion_detection_start(void);
 
-/* Return true when PIR support is enabled in menuconfig. */
-bool motion_detection_is_enabled(void);
+/* Re-read persisted runtime values and apply them to the live detector. */
+esp_err_t motion_detection_apply_runtime_config(void);
+
+/* Return true when PIR support is compiled into this firmware build. */
+bool motion_detection_is_supported(void);
 
 /* Return true once the detector is enabled, started, and past warm-up. */
 bool motion_detection_is_armed(void);

@@ -71,9 +71,3 @@ esp_err_t heartbeat_task_set_interval_s(uint32_t interval_s)
     s_interval_s = interval_s;
     return ESP_OK;
 }
-
-/* Return the currently active heartbeat period. */
-uint32_t heartbeat_task_get_interval_s(void)
-{
-    return s_interval_s;
-}

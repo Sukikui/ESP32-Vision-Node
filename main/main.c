@@ -13,6 +13,7 @@
 #include "mqtt_service.h"
 #include "node_event.h"
 #include "publish_queue.h"
+#include "runtime_config.h"
 #include "topic_map.h"
 
 /* Main firmware entry point and high-level service wiring. */
@@ -46,9 +47,11 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(err);
 
+    /* Load persisted runtime overrides before starting services that consume them. */
+    ESP_ERROR_CHECK(runtime_config_init());
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    if (motion_detection_is_enabled()) {
+    if (motion_detection_is_supported()) {
         /* The detector posts on the default event loop, so the bridge handler must be registered early. */
         ESP_ERROR_CHECK(esp_event_handler_register(
             MOTION_DETECTION_EVENT,
@@ -68,6 +71,9 @@ void app_main(void)
 
     ESP_ERROR_CHECK(mqtt_service_init());
     ESP_ERROR_CHECK(mqtt_service_start());
+
+    /* Apply the restored heartbeat interval before the task starts using it in its delay loop. */
+    ESP_ERROR_CHECK(heartbeat_task_set_interval_s(runtime_config_get_heartbeat_interval_s()));
 
     /* Start optional services only after the control plane is ready to publish their events. */
     ESP_ERROR_CHECK(motion_detection_start());

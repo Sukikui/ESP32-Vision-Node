@@ -8,5 +8,5 @@ idf_component_register(
         "publish_queue.c"
         "topic_map.c"
     INCLUDE_DIRS "include"
-    PRIV_REQUIRES app_config connectivity esp_event esp_timer
+    PRIV_REQUIRES app_config connectivity detection esp_event esp_timer runtime_config
 )

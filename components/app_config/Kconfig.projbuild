@@ -65,42 +65,50 @@ menu "Application Configuration"
         help
             Maximum number of image bytes sent in one MQTT chunk.
 
-    config APP_MOTION_DETECTION_ENABLED
-        bool "Enable PIR motion detection"
+    config APP_HAS_MOTION_DETECTION
+        bool "Build with PIR motion detection support"
         default n
         help
-            Enable a PIR sensor connected to a GPIO input. When motion is
-            detected, the firmware publishes the motion_detected event over MQTT.
+            Compile the PIR motion detection feature into the firmware for
+            hardware variants that physically expose a PIR sensor.
 
     config APP_MOTION_PIR_GPIO
         int "PIR GPIO number"
         default 10
-        depends on APP_MOTION_DETECTION_ENABLED
+        depends on APP_HAS_MOTION_DETECTION
         help
             GPIO connected to the PIR module digital output.
 
     config APP_MOTION_PIR_ACTIVE_HIGH
         bool "PIR output is active high"
         default y
-        depends on APP_MOTION_DETECTION_ENABLED
+        depends on APP_HAS_MOTION_DETECTION
         help
             Enable if the PIR module drives the GPIO high on motion detection.
 
-    config APP_MOTION_WARMUP_MS
-        int "PIR warm-up time (ms)"
+    config APP_MOTION_DEFAULT_ENABLED
+        bool "PIR enabled by default"
+        default y
+        depends on APP_HAS_MOTION_DETECTION
+        help
+            Default runtime state used on first boot before any persisted NVS
+            override exists.
+
+    config APP_MOTION_DEFAULT_WARMUP_MS
+        int "Default PIR warm-up time (ms)"
         range 0 120000
         default 30000
-        depends on APP_MOTION_DETECTION_ENABLED
+        depends on APP_HAS_MOTION_DETECTION
         help
-            Initial warm-up period after the detector starts, during which
-            triggers are ignored.
+            Default initial warm-up period after the detector starts, during
+            which triggers are ignored.
 
-    config APP_MOTION_COOLDOWN_MS
-        int "PIR cooldown time (ms)"
+    config APP_MOTION_DEFAULT_COOLDOWN_MS
+        int "Default PIR cooldown time (ms)"
         range 0 60000
         default 5000
-        depends on APP_MOTION_DETECTION_ENABLED
+        depends on APP_HAS_MOTION_DETECTION
         help
-            Minimum delay between two accepted motion triggers.
+            Default minimum delay between two accepted motion triggers.
 
 endmenu

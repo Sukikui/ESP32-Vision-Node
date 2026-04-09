@@ -12,6 +12,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "runtime_config.h"
 
 ESP_EVENT_DEFINE_BASE(MOTION_DETECTION_EVENT);
 
@@ -22,6 +23,8 @@ typedef struct {
     TaskHandle_t task_handle;
     bool initialized;
     bool started;
+    uint32_t warmup_ms;
+    uint32_t cooldown_ms;
     int64_t warmup_until_us;
     int64_t last_trigger_us;
 } motion_detection_state_t;
@@ -50,12 +53,68 @@ static esp_err_t motion_detection_publish_trigger(int64_t timestamp_us)
         pdMS_TO_TICKS(100));
 }
 
+/* Apply the current runtime timing values and decide whether the detector should be armed at all. */
+static esp_err_t motion_detection_apply_runtime_config_internal(void)
+{
+    bool should_enable;
+    bool was_started;
+
+    if (!APP_HAS_MOTION_DETECTION) {
+        return ESP_OK;
+    }
+
+    ESP_RETURN_ON_FALSE(s_state.initialized, ESP_ERR_INVALID_STATE, TAG, "motion detection not initialized");
+
+    was_started = s_state.started;
+    s_state.warmup_ms = runtime_config_get_motion_warmup_ms();
+    s_state.cooldown_ms = runtime_config_get_motion_cooldown_ms();
+    should_enable = runtime_config_get_motion_detection_enabled();
+
+    if (!should_enable) {
+        s_state.started = false;
+        s_state.warmup_until_us = 0;
+        s_state.last_trigger_us = 0;
+
+        if (was_started) {
+            ESP_LOGI(TAG, "PIR motion detection disabled by runtime config");
+        }
+        return ESP_OK;
+    }
+
+    if (!was_started) {
+        /*
+         * Re-arming starts a fresh warm-up window because the PIR may have been idle or intentionally disabled.
+         * This keeps the first trigger after re-enable consistent with the normal boot path.
+         */
+        s_state.warmup_until_us = esp_timer_get_time() + ((int64_t)s_state.warmup_ms * 1000LL);
+        s_state.last_trigger_us = 0;
+        s_state.started = true;
+
+        ESP_LOGI(TAG,
+                 "PIR motion detection started: active_%s, warmup=%" PRIu32 " ms, cooldown=%" PRIu32 " ms",
+                 APP_MOTION_PIR_ACTIVE_HIGH ? "high" : "low",
+                 s_state.warmup_ms,
+                 s_state.cooldown_ms);
+        return ESP_OK;
+    }
+
+    /*
+     * When the detector is already running, only the timing parameters change live.
+     * The current warm-up window and last accepted trigger stay untouched to avoid surprising resets mid-run.
+     */
+    ESP_LOGI(TAG,
+             "PIR motion detection updated: warmup=%" PRIu32 " ms, cooldown=%" PRIu32 " ms",
+             s_state.warmup_ms,
+             s_state.cooldown_ms);
+    return ESP_OK;
+}
+
 /* Consume raw PIR edges and filter them through warm-up and cooldown rules. */
 static void motion_detection_task(void *arg)
 {
-    const int64_t cooldown_us = (int64_t)APP_MOTION_COOLDOWN_MS * 1000LL;
-
     while (true) {
+        int64_t cooldown_us;
+
         (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
         if (!s_state.started) {
@@ -68,6 +127,9 @@ static void motion_detection_task(void *arg)
             ESP_LOGD(TAG, "ignoring PIR trigger during warm-up");
             continue;
         }
+
+        /* Convert the runtime cooldown from milliseconds to microseconds right before applying it. */
+        cooldown_us = (int64_t)s_state.cooldown_ms * 1000LL;
 
         /* Ignore edges that arrive too soon after the previous accepted detection. */
         if (cooldown_us > 0 && s_state.last_trigger_us > 0 && (now_us - s_state.last_trigger_us) < cooldown_us) {
@@ -91,7 +153,7 @@ esp_err_t motion_detection_init(void)
     gpio_int_type_t intr_type;
     esp_err_t err;
 
-    if (!APP_MOTION_DETECTION_ENABLED) {
+    if (!APP_HAS_MOTION_DETECTION) {
         return ESP_OK;
     }
 
@@ -104,6 +166,8 @@ esp_err_t motion_detection_init(void)
     }
 
     memset(&s_state, 0, sizeof(s_state));
+    s_state.warmup_ms = APP_MOTION_DEFAULT_WARMUP_MS;
+    s_state.cooldown_ms = APP_MOTION_DEFAULT_COOLDOWN_MS;
 
     intr_type = APP_MOTION_PIR_ACTIVE_HIGH ? GPIO_INTR_POSEDGE : GPIO_INTR_NEGEDGE;
     io_config.pin_bit_mask = 1ULL << APP_MOTION_PIR_GPIO;
@@ -136,38 +200,25 @@ esp_err_t motion_detection_init(void)
 /* Arm the detector and remember when the warm-up window will end. */
 esp_err_t motion_detection_start(void)
 {
-    if (!APP_MOTION_DETECTION_ENABLED) {
-        return ESP_OK;
-    }
+    return motion_detection_apply_runtime_config_internal();
+}
 
-    ESP_RETURN_ON_FALSE(s_state.initialized, ESP_ERR_INVALID_STATE, TAG, "motion detection not initialized");
-
-    if (s_state.started) {
-        return ESP_OK;
-    }
-
-    s_state.warmup_until_us = esp_timer_get_time() + ((int64_t)APP_MOTION_WARMUP_MS * 1000LL);
-    s_state.last_trigger_us = 0;
-    s_state.started = true;
-
-    ESP_LOGI(TAG,
-             "PIR motion detection started: active_%s, warmup=%d ms, cooldown=%d ms",
-             APP_MOTION_PIR_ACTIVE_HIGH ? "high" : "low",
-             APP_MOTION_WARMUP_MS,
-             APP_MOTION_COOLDOWN_MS);
-    return ESP_OK;
+/* Re-read persisted runtime values and apply them to the live detector. */
+esp_err_t motion_detection_apply_runtime_config(void)
+{
+    return motion_detection_apply_runtime_config_internal();
 }
 
 /* Report whether PIR support is enabled at build time. */
-bool motion_detection_is_enabled(void)
+bool motion_detection_is_supported(void)
 {
-    return APP_MOTION_DETECTION_ENABLED;
+    return APP_HAS_MOTION_DETECTION;
 }
 
 /* Report whether PIR detection has finished warm-up and can emit events. */
 bool motion_detection_is_armed(void)
 {
-    if (!APP_MOTION_DETECTION_ENABLED || !s_state.started) {
+    if (!APP_HAS_MOTION_DETECTION || !s_state.started) {
         return false;
     }
 

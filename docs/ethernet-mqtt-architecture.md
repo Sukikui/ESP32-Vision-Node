@@ -65,12 +65,12 @@ Notes:
 
 ## Project Configuration
 
-The project exposes these runtime configuration values through `menuconfig`:
+The project exposes these build-time and default runtime configuration values through `menuconfig`:
 
 | Key | Meaning |
 | --- | --- |
 | `APP_NODE_ID` | MQTT node identifier |
-| `APP_HEARTBEAT_INTERVAL_S` | heartbeat period in seconds |
+| `APP_HEARTBEAT_INTERVAL_S` | default heartbeat period in seconds |
 | `APP_MQTT_BROKER_PORT` | TCP port used for the MQTT broker |
 | `APP_TOPIC_MAX_LEN` | maximum topic buffer length |
 | `APP_JSON_PAYLOAD_MAX_LEN` | maximum length for small JSON payload buffers |
@@ -78,11 +78,12 @@ The project exposes these runtime configuration values through `menuconfig`:
 | `APP_PUBLISH_QUEUE_LENGTH` | maximum number of queued outgoing MQTT messages |
 | `APP_PUBLISH_MAX_DATA_LEN` | maximum payload size stored in one queued MQTT message |
 | `APP_IMAGE_CHUNK_SIZE` | maximum image bytes sent in one MQTT chunk |
-| `APP_MOTION_DETECTION_ENABLED` | enable PIR-based motion detection |
+| `APP_HAS_MOTION_DETECTION` | build-time gate that includes PIR support in this firmware |
 | `APP_MOTION_PIR_GPIO` | GPIO connected to the PIR digital output |
 | `APP_MOTION_PIR_ACTIVE_HIGH` | trigger on rising edge when enabled |
-| `APP_MOTION_WARMUP_MS` | warm-up period during which PIR triggers are ignored |
-| `APP_MOTION_COOLDOWN_MS` | minimum delay between two accepted motion triggers |
+| `APP_MOTION_DEFAULT_ENABLED` | default runtime enabled state used before any NVS override exists |
+| `APP_MOTION_DEFAULT_WARMUP_MS` | default warm-up period used before any NVS override exists |
+| `APP_MOTION_DEFAULT_COOLDOWN_MS` | default cooldown period used before any NVS override exists |
 
 MQTT broker discovery follows this convention:
 
@@ -105,6 +106,7 @@ The resolved versions are stored in `dependencies.lock`.
 | `main/main.c` | boot sequence and service startup |
 | `components/connectivity/ethernet_service.c` | Ethernet driver, netif attachment, link/IP state |
 | `components/detection/motion_detection.c` | PIR GPIO interrupt, warm-up, cooldown, and motion event emission |
+| `components/runtime_config/runtime_config.c` | persisted runtime settings restored from NVS |
 | `components/messaging/mqtt_service.c` | MQTT client lifecycle and publish API |
 | `components/messaging/topic_map.c` | MQTT topic construction helpers |
 | `components/messaging/command_router.c` | incoming command parsing and dispatch |
@@ -119,21 +121,23 @@ The resolved versions are stored in `dependencies.lock`.
 The expected boot order is:
 
 1. initialize `nvs_flash`
-2. initialize `esp_netif`
-3. create the default event loop
-4. register the motion detection event handler if PIR detection is enabled
-5. initialize topic mapping from `APP_NODE_ID`
-6. initialize Ethernet service
-7. initialize and start the publish queue
-8. initialize PIR motion detection
-9. start Ethernet
-10. wait for DHCP IPv4 address
-11. read the DHCP gateway and derive the MQTT broker URI
-12. initialize MQTT
-13. start MQTT
-14. start PIR motion detection
-15. publish `boot_completed`
-16. start the heartbeat task
+2. load persisted runtime overrides from NVS
+3. initialize `esp_netif`
+4. create the default event loop
+5. register the motion detection event handler if PIR support is compiled into this build
+6. initialize topic mapping from `APP_NODE_ID`
+7. initialize Ethernet service
+8. initialize and start the publish queue
+9. initialize PIR motion detection
+10. start Ethernet
+11. wait for DHCP IPv4 address
+12. read the DHCP gateway and derive the MQTT broker URI
+13. initialize MQTT
+14. start MQTT
+15. apply the restored heartbeat interval to the heartbeat task
+16. start PIR motion detection
+17. start the heartbeat task
+18. publish `boot_completed`
 
 ## MQTT Topic Catalog
 
@@ -284,6 +288,17 @@ Purpose:
 
 Node-specific and broadcast commands use the same payload shape. The only difference is whether one node or all listening nodes should react.
 
+For `config`, supported runtime values are validated together, committed to NVS in one transaction, and then applied live. If one requested value is invalid, the previous persisted config is left unchanged.
+
+The `motion_*` runtime keys are only accepted when PIR support is compiled into the firmware via `APP_HAS_MOTION_DETECTION`.
+
+Currently persisted runtime config keys are:
+
+- `heartbeat_interval_s`
+- `motion_detection_enabled`
+- `motion_warmup_ms`
+- `motion_cooldown_ms`
+
 <table>
 <tr>
 <th>Item</th>
@@ -326,7 +341,10 @@ Node-specific and broadcast commands use the same payload shape. The only differ
 ```json
 {
   "request_id": "req-43",
-  "heartbeat_interval_s": 30
+  "heartbeat_interval_s": 30,
+  "motion_detection_enabled": true,
+  "motion_warmup_ms": 30000,
+  "motion_cooldown_ms": 5000
 }
 ```
 
@@ -404,6 +422,9 @@ Purpose:
   "node_id": "p4-001",
   "ok": true,
   "heartbeat_interval_s": 30,
+  "motion_detection_enabled": true,
+  "motion_warmup_ms": 30000,
+  "motion_cooldown_ms": 5000,
   "updated": true
 }
 ```

@@ -2,6 +2,6 @@ idf_component_register(
     SRCS
         "main.c"
     INCLUDE_DIRS "."
-    REQUIRES app_config connectivity detection messaging
+    REQUIRES app_config connectivity detection messaging runtime_config
     PRIV_REQUIRES esp_event esp_netif nvs_flash
 )

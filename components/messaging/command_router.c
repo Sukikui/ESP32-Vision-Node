@@ -14,8 +14,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "heartbeat_task.h"
+#include "motion_detection.h"
 #include "mqtt_service.h"
 #include "node_event.h"
+#include "runtime_config.h"
 #include "topic_map.h"
 
 /* Parse MQTT command payloads and dispatch them to the matching control-plane handlers. */
@@ -138,6 +140,49 @@ static bool extract_json_u32_field(const char *payload, const char *field_name, 
     return true;
 }
 
+/* Extract one JSON boolean field from the same small top-level JSON command payload. */
+static bool extract_json_bool_field(const char *payload, const char *field_name, bool *value)
+{
+    char pattern[32];
+    const char *start;
+
+    if (payload == NULL || field_name == NULL || value == NULL) {
+        return false;
+    }
+
+    if (payload[0] != '{') {
+        return false;
+    }
+
+    snprintf(pattern, sizeof(pattern), "\"%s\"", field_name);
+    start = strstr(payload, pattern);
+    if (start == NULL) {
+        return false;
+    }
+
+    start = strchr(start, ':');
+    if (start == NULL) {
+        return false;
+    }
+
+    start++;
+    while (*start == ' ' || *start == '\t') {
+        start++;
+    }
+
+    if (strncmp(start, "true", 4) == 0) {
+        *value = true;
+        return true;
+    }
+
+    if (strncmp(start, "false", 5) == 0) {
+        *value = false;
+        return true;
+    }
+
+    return false;
+}
+
 /* Read the request_id field used to choose the reply topic for this command. */
 static void extract_request_id(const char *payload, char *request_id, size_t request_id_len)
 {
@@ -206,31 +251,78 @@ static void handle_ping_command(const char *request_id)
 static void handle_config_command(const char *request_id, const char *payload_in)
 {
     char payload[APP_JSON_PAYLOAD_MAX_LEN];
-    uint32_t heartbeat_interval_s = 0;
+    runtime_config_patch_t patch = {0};
     bool updated = false;
     esp_err_t err = ESP_OK;
+    const char *error_code = "invalid_config";
 
     /*
      * Only the currently supported config keys are parsed here.
      * Unknown keys are ignored so the command stays forward-compatible while the firmware grows.
      */
-    if (extract_json_u32_field(payload_in, "heartbeat_interval_s", &heartbeat_interval_s)) {
-        err = heartbeat_task_set_interval_s(heartbeat_interval_s);
-        updated = (err == ESP_OK);
+    if (extract_json_u32_field(payload_in, "heartbeat_interval_s", &patch.heartbeat_interval_s)) {
+        patch.has_heartbeat_interval_s = true;
+    }
+
+    if (extract_json_bool_field(payload_in, "motion_detection_enabled", &patch.motion_detection_enabled)) {
+        patch.has_motion_detection_enabled = true;
+    }
+
+    if (extract_json_u32_field(payload_in, "motion_warmup_ms", &patch.motion_warmup_ms)) {
+        patch.has_motion_warmup_ms = true;
+    }
+
+    if (extract_json_u32_field(payload_in, "motion_cooldown_ms", &patch.motion_cooldown_ms)) {
+        patch.has_motion_cooldown_ms = true;
+    }
+
+    /*
+     * Persist all requested config keys in one NVS transaction so a failing cmd/config
+     * never leaves behind a half-applied persistent state.
+     */
+    err = runtime_config_apply_patch(&patch, true);
+    if (err == ESP_OK) {
+        updated = patch.has_heartbeat_interval_s
+            || patch.has_motion_detection_enabled
+            || patch.has_motion_warmup_ms
+            || patch.has_motion_cooldown_ms;
+
+        if (patch.has_heartbeat_interval_s) {
+            err = heartbeat_task_set_interval_s(runtime_config_get_heartbeat_interval_s());
+        }
+
+        if (err == ESP_OK && (patch.has_motion_detection_enabled || patch.has_motion_warmup_ms || patch.has_motion_cooldown_ms)) {
+            err = motion_detection_apply_runtime_config();
+        }
+
+        if (err != ESP_OK) {
+            error_code = "apply_failed";
+        }
+    } else if (err == ESP_ERR_NOT_SUPPORTED) {
+        error_code = "unsupported_feature";
+    } else if (err != ESP_ERR_INVALID_ARG) {
+        error_code = "persist_failed";
     }
 
     if (err != ESP_OK) {
         snprintf(payload,
                  sizeof(payload),
-                 "{\"node_id\":\"%s\",\"ok\":false,\"error\":\"invalid_config\",\"heartbeat_interval_s\":%" PRIu32 "}",
+                 "{\"node_id\":\"%s\",\"ok\":false,\"error\":\"%s\",\"heartbeat_interval_s\":%" PRIu32 ",\"motion_detection_enabled\":%s,\"motion_warmup_ms\":%" PRIu32 ",\"motion_cooldown_ms\":%" PRIu32 "}",
                  topic_map_get_node_id(),
-                 heartbeat_task_get_interval_s());
+                 error_code,
+                 runtime_config_get_heartbeat_interval_s(),
+                 runtime_config_get_motion_detection_enabled() ? "true" : "false",
+                 runtime_config_get_motion_warmup_ms(),
+                 runtime_config_get_motion_cooldown_ms());
     } else {
         snprintf(payload,
                  sizeof(payload),
-                 "{\"node_id\":\"%s\",\"ok\":true,\"heartbeat_interval_s\":%" PRIu32 ",\"updated\":%s}",
+                 "{\"node_id\":\"%s\",\"ok\":true,\"heartbeat_interval_s\":%" PRIu32 ",\"motion_detection_enabled\":%s,\"motion_warmup_ms\":%" PRIu32 ",\"motion_cooldown_ms\":%" PRIu32 ",\"updated\":%s}",
                  topic_map_get_node_id(),
-                 heartbeat_task_get_interval_s(),
+                 runtime_config_get_heartbeat_interval_s(),
+                 runtime_config_get_motion_detection_enabled() ? "true" : "false",
+                 runtime_config_get_motion_warmup_ms(),
+                 runtime_config_get_motion_cooldown_ms(),
                  updated ? "true" : "false");
         if (updated) {
             if (node_event_publish("config_updated") != ESP_OK) {
