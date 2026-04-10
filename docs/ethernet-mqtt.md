@@ -207,6 +207,8 @@ Purpose:
 </tr>
 </table>
 
+---
+
 ### 🔌 `vision/nodes/{node_id}/status/heartbeat`
 
 Purpose:
@@ -240,6 +242,8 @@ Purpose:
 </tr>
 </table>
 
+---
+
 ### 🔌 `vision/nodes/{node_id}/event`
 
 Purpose:
@@ -270,14 +274,20 @@ Purpose:
 
 </td>
 </tr>
+</tr>
+<tr>
+<td>Possible event values</td>
+<td>
+<code>boot_completed</code><br>
+<code>config_updated</code><br>
+<code>capture_failed</code><br>
+<code>motion_detected</code>
+
+</td>
+</tr>
 </table>
 
-Possible event values:
-
-- `boot_completed`
-- `config_updated`
-- `capture_failed`
-- `motion_detected`
+---
 
 ### 🔌 `vision/nodes/{node_id}/cmd/*` and `vision/broadcast/cmd/*`
 
@@ -382,6 +392,8 @@ A `capture` command is expected to trigger an image publication sequence on:
 - `vision/nodes/{node_id}/image/{capture_id}/chunk/{index}`
 - `vision/nodes/{node_id}/image/{capture_id}/done`
 
+---
+
 ### 🔌 `vision/nodes/{node_id}/reply/{request_id}`
 
 Purpose:
@@ -447,6 +459,7 @@ Purpose:
 </tr>
 </table>
 
+---
 
 ### 🔌 `vision/nodes/{node_id}/image/{capture_id}/meta`
 
@@ -482,6 +495,8 @@ Purpose:
 </tr>
 </table>
 
+---
+
 ### 🔌 `vision/nodes/{node_id}/image/{capture_id}/chunk/{index}`
 
 Purpose:
@@ -513,6 +528,8 @@ Purpose:
 </td>
 </tr>
 </table>
+
+---
 
 ### 🔌 `vision/nodes/{node_id}/image/{capture_id}/done`
 
@@ -547,6 +564,8 @@ Purpose:
 </table>
 
 The Raspberry Pi side must reassemble the image by `capture_id`.
+
+---
 
 ## Flow Examples
 

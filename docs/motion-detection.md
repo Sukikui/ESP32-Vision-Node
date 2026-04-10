@@ -12,7 +12,7 @@ It covers:
 - the warm-up and cooldown timing model
 - the runtime parameters that can be changed through `cmd/config`
 
-The MQTT topic contract itself is documented in [`ethernet-mqtt-architecture.md`](./ethernet-mqtt-architecture.md). This document focuses on the local node-side behavior.
+The MQTT topic contract itself is documented in [`ethernet-mqtt.md`](./ethernet-mqtt.md). This document focuses on the local node-side behavior.
 
 ## Hardware Model
 
@@ -128,7 +128,7 @@ Runtime updates behave like this:
 
 ## Runtime Parameters
 
-The PIR-related runtime keys are updated through the same MQTT `cmd/config` command described in [`ethernet-mqtt-architecture.md`](./ethernet-mqtt-architecture.md).
+The PIR-related runtime keys are updated through the same MQTT `cmd/config` command described in [`ethernet-mqtt.md`](./ethernet-mqtt.md).
 
 Example payload:
 
@@ -149,7 +149,7 @@ Current behavior:
 - valid updates are stored in NVS and then applied to the live detector
 - if PIR support is not compiled into the current build, the `motion_*` block is rejected as `unsupported_feature`
 
-The persistence model itself is documented in [`runtime-config-nvs.md`](./runtime-config-nvs.md).
+The persistence model itself is documented in [`runtime-config.md`](./runtime-config.md).
 
 ## Internal Events
 
@@ -178,7 +178,7 @@ This means:
 - PIR logic stays independent from MQTT client code
 - the same internal event could later trigger other actions such as image capture without rewriting the detector itself
 
-The MQTT topic, payload shape, and surrounding control-plane behavior remain documented in [`ethernet-mqtt-architecture.md`](./ethernet-mqtt-architecture.md).
+The MQTT topic, payload shape, and surrounding control-plane behavior remain documented in [`ethernet-mqtt.md`](./ethernet-mqtt.md).
 
 ## Current Limitations
 

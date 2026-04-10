@@ -3,7 +3,7 @@
 ## Overview
 
 This document describes how runtime configuration is handled in the firmware and how selected values are persisted across reboots.
-The MQTT command and reply topics remain documented in [`ethernet-mqtt-architecture.md`](./ethernet-mqtt-architecture.md). This document focuses on configuration storage and restore behavior.
+The MQTT command and reply topics remain documented in [`ethernet-mqtt.md`](./ethernet-mqtt.md). This document focuses on configuration storage and restore behavior.
 
 ## Two Configuration Layers
 
@@ -134,7 +134,7 @@ This keeps the model simple:
 - build-time support decides whether the PIR feature exists in this firmware
 - runtime config only controls that feature when it is actually available
 
-The PIR behavior itself is documented in [`pir-motion-detection.md`](./pir-motion-detection.md).
+The PIR behavior itself is documented in [`motion-detection.md`](./motion-detection.md).
 
 ## Reboot, Rebuild, and Reflash Behavior
 
@@ -189,5 +189,5 @@ After that:
 
 ## Related Documents
 
-- [`ethernet-mqtt-architecture.md`](./ethernet-mqtt-architecture.md)
-- [`pir-motion-detection.md`](./pir-motion-detection.md)
+- [`ethernet-mqtt.md`](./ethernet-mqtt.md)
+- [`motion-detection.md`](./motion-detection.md)
