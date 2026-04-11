@@ -4,7 +4,7 @@
 
 ## Project Context
 
-The local files `.vscode/settings.json` and `.vscode/c_cpp_properties.json` should stay consistent with this context.
+Local editor, debugger, and toolchain settings should stay aligned with this project context.
 
 | Item | Value |
 | --- | --- |

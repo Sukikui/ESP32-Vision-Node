@@ -1,9 +1,10 @@
 #include "image_transfer.h"
 
-#include <stdio.h>
 #include <stdint.h>
 
 #include "app_config.h"
+#include "cJSON.h"
+#include "json_utils.h"
 #include "mqtt_service.h"
 #include "topic_map.h"
 
@@ -22,6 +23,9 @@ esp_err_t image_transfer_publish(const char *capture_id, const void *data, size_
     const char *mime_type = (content_type != NULL && content_type[0] != '\0') ? content_type : "application/octet-stream";
     size_t chunk_count;
     size_t chunk_index;
+    cJSON *meta_root = NULL;
+    cJSON *done_root = NULL;
+    esp_err_t err;
 
     /* Reject malformed transfer requests before building any topic or payload. */
     if (capture_id == NULL || capture_id[0] == '\0' || (data == NULL && data_len > 0)) {
@@ -36,27 +40,33 @@ esp_err_t image_transfer_publish(const char *capture_id, const void *data, size_
     }
 
     /*
-     * Build the JSON metadata payload in meta_payload.
+     * Build the JSON metadata payload.
      * This is the first MQTT message of the transfer and it tells the receiver:
      * - which capture is starting
      * - how many total bytes the image contains
      * - how large each chunk can be
      * - how many chunk messages must be received before the transfer is complete
      */
-    if (snprintf(meta_payload,
-                 sizeof(meta_payload),
-                 "{\"capture_id\":\"%s\",\"content_type\":\"%s\",\"total_size\":%u,\"chunk_size\":%u,\"chunk_count\":%u}",
-                 capture_id,
-                 mime_type,
-                 (unsigned)data_len,
-                 (unsigned)APP_IMAGE_CHUNK_SIZE,
-                 (unsigned)chunk_count) >= (int)sizeof(meta_payload)) {
-        /* If this fails, the configured JSON buffer is too small for the metadata contract. */
-        return ESP_ERR_INVALID_SIZE;
+    meta_root = cJSON_CreateObject();
+    if (meta_root == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    cJSON_AddStringToObject(meta_root, "capture_id", capture_id);
+    cJSON_AddStringToObject(meta_root, "content_type", mime_type);
+    cJSON_AddNumberToObject(meta_root, "total_size", (double)data_len);
+    cJSON_AddNumberToObject(meta_root, "chunk_size", (double)APP_IMAGE_CHUNK_SIZE);
+    cJSON_AddNumberToObject(meta_root, "chunk_count", (double)chunk_count);
+
+    err = json_utils_print_to_buffer(meta_root, meta_payload, sizeof(meta_payload));
+    cJSON_Delete(meta_root);
+    if (err != ESP_OK) {
+        return err;
     }
 
     /* Publish metadata first so the receiver can allocate/reconstruct before raw chunks arrive. */
-    if (mqtt_service_publish_json(topic, meta_payload, 1, false) != ESP_OK) {
+    err = mqtt_service_publish_json(topic, meta_payload, 1, false);
+    if (err != ESP_OK) {
         return ESP_FAIL;
     }
 
@@ -92,12 +102,19 @@ esp_err_t image_transfer_publish(const char *capture_id, const void *data, size_
      * Build the final JSON payload announcing that all chunks for this capture were sent.
      * The receiver can use chunk_count to verify that the transfer is complete.
      */
-    if (snprintf(done_payload,
-                 sizeof(done_payload),
-                 "{\"capture_id\":\"%s\",\"chunk_count\":%u,\"ok\":true}",
-                 capture_id,
-                 (unsigned)chunk_count) >= (int)sizeof(done_payload)) {
-        return ESP_ERR_INVALID_SIZE;
+    done_root = cJSON_CreateObject();
+    if (done_root == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    cJSON_AddStringToObject(done_root, "capture_id", capture_id);
+    cJSON_AddNumberToObject(done_root, "chunk_count", (double)chunk_count);
+    cJSON_AddBoolToObject(done_root, "ok", true);
+
+    err = json_utils_print_to_buffer(done_root, done_payload, sizeof(done_payload));
+    cJSON_Delete(done_root);
+    if (err != ESP_OK) {
+        return err;
     }
 
     /* Publish the end marker last so the receiver knows the transfer is complete. */

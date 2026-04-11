@@ -53,10 +53,9 @@ static esp_err_t motion_detection_publish_trigger(int64_t timestamp_us)
         pdMS_TO_TICKS(100));
 }
 
-/* Apply the current runtime timing values and decide whether the detector should be armed at all. */
-static esp_err_t motion_detection_apply_runtime_config_internal(void)
+/* Apply one explicit runtime state and decide whether the detector should be armed at all. */
+static esp_err_t motion_detection_apply_settings_internal(bool should_enable, uint32_t warmup_ms, uint32_t cooldown_ms)
 {
-    bool should_enable;
     bool was_started;
 
     if (!APP_HAS_MOTION_DETECTION) {
@@ -66,9 +65,8 @@ static esp_err_t motion_detection_apply_runtime_config_internal(void)
     ESP_RETURN_ON_FALSE(s_state.initialized, ESP_ERR_INVALID_STATE, TAG, "motion detection not initialized");
 
     was_started = s_state.started;
-    s_state.warmup_ms = runtime_config_get_motion_warmup_ms();
-    s_state.cooldown_ms = runtime_config_get_motion_cooldown_ms();
-    should_enable = runtime_config_get_motion_detection_enabled();
+    s_state.warmup_ms = warmup_ms;
+    s_state.cooldown_ms = cooldown_ms;
 
     if (!should_enable) {
         s_state.started = false;
@@ -200,13 +198,23 @@ esp_err_t motion_detection_init(void)
 /* Arm the detector and remember when the warm-up window will end. */
 esp_err_t motion_detection_start(void)
 {
-    return motion_detection_apply_runtime_config_internal();
+    return motion_detection_apply_settings_internal(runtime_config_get_motion_detection_enabled(),
+                                                    runtime_config_get_motion_warmup_ms(),
+                                                    runtime_config_get_motion_cooldown_ms());
 }
 
 /* Re-read persisted runtime values and apply them to the live detector. */
 esp_err_t motion_detection_apply_runtime_config(void)
 {
-    return motion_detection_apply_runtime_config_internal();
+    return motion_detection_apply_settings_internal(runtime_config_get_motion_detection_enabled(),
+                                                    runtime_config_get_motion_warmup_ms(),
+                                                    runtime_config_get_motion_cooldown_ms());
+}
+
+/* Apply one explicit runtime state to the live detector without reading runtime_config. */
+esp_err_t motion_detection_apply_settings(bool enabled, uint32_t warmup_ms, uint32_t cooldown_ms)
+{
+    return motion_detection_apply_settings_internal(enabled, warmup_ms, cooldown_ms);
 }
 
 /* Report whether PIR support is enabled at build time. */

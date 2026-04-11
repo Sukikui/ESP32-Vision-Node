@@ -3,6 +3,7 @@ idf_component_register(
         "command_router.c"
         "heartbeat_task.c"
         "image_transfer.c"
+        "json_utils.c"
         "mqtt_service.c"
         "node_event.c"
         "publish_queue.c"

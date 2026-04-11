@@ -5,11 +5,13 @@
 #include <string.h>
 
 #include "app_config.h"
+#include "cJSON.h"
 #include "command_router.h"
 #include "ethernet_service.h"
 #include "esp_check.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "json_utils.h"
 #include "mqtt_client.h"
 #include "publish_queue.h"
 #include "topic_map.h"
@@ -26,27 +28,31 @@ static char s_broker_uri[APP_TOPIC_MAX_LEN];
 /* Fill the static JSON buffers used for retained online state and Last Will offline state. */
 static esp_err_t build_presence_payloads(void)
 {
-    int written;
+    cJSON *online_root = NULL;
+    cJSON *offline_root = NULL;
+    esp_err_t err = ESP_OK;
 
-    written = snprintf(
-        s_online_payload,
-        sizeof(s_online_payload),
-        "{\"state\":\"online\",\"node_id\":\"%s\"}",
-        topic_map_get_node_id());
-    if (written < 0 || (size_t)written >= sizeof(s_online_payload)) {
-        return ESP_ERR_INVALID_SIZE;
+    online_root = cJSON_CreateObject();
+    offline_root = cJSON_CreateObject();
+    if (online_root == NULL || offline_root == NULL) {
+        err = ESP_ERR_NO_MEM;
+        goto cleanup;
     }
 
-    written = snprintf(
-        s_offline_payload,
-        sizeof(s_offline_payload),
-        "{\"state\":\"offline\",\"node_id\":\"%s\"}",
-        topic_map_get_node_id());
-    if (written < 0 || (size_t)written >= sizeof(s_offline_payload)) {
-        return ESP_ERR_INVALID_SIZE;
+    cJSON_AddStringToObject(online_root, "state", "online");
+    cJSON_AddStringToObject(online_root, "node_id", topic_map_get_node_id());
+    cJSON_AddStringToObject(offline_root, "state", "offline");
+    cJSON_AddStringToObject(offline_root, "node_id", topic_map_get_node_id());
+
+    err = json_utils_print_to_buffer(online_root, s_online_payload, sizeof(s_online_payload));
+    if (err == ESP_OK) {
+        err = json_utils_print_to_buffer(offline_root, s_offline_payload, sizeof(s_offline_payload));
     }
 
-    return ESP_OK;
+cleanup:
+    cJSON_Delete(online_root);
+    cJSON_Delete(offline_root);
+    return err;
 }
 
 /* Publish the retained online payload on status/online as soon as the broker accepts the session. */

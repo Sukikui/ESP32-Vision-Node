@@ -35,6 +35,12 @@ static esp_err_t format_checked(char *buffer, size_t buffer_len, const char *fmt
     return ESP_OK;
 }
 
+/* Match one command topic against its node-specific and broadcast forms. */
+static bool command_topic_matches(const char *topic, const char *node_topic, const char *broadcast_topic)
+{
+    return topic != NULL && (strcmp(topic, node_topic) == 0 || strcmp(topic, broadcast_topic) == 0);
+}
+
 /* Expand all node-specific topic strings once from the configured node ID. */
 esp_err_t topic_map_init(const char *node_id)
 {
@@ -42,11 +48,9 @@ esp_err_t topic_map_init(const char *node_id)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (strlen(node_id) >= sizeof(s_node_id)) {
+    if (strlcpy(s_node_id, node_id, sizeof(s_node_id)) >= sizeof(s_node_id)) {
         return ESP_ERR_INVALID_SIZE;
     }
-
-    strlcpy(s_node_id, node_id, sizeof(s_node_id));
 
     /*
      * Most call sites only need a const char *.
@@ -108,41 +112,25 @@ const char *topic_map_get_broadcast_subscription_topic(void)
 /* Return true when the topic is either the node-specific or broadcast ping command topic. */
 bool topic_map_is_ping_topic(const char *topic)
 {
-    if (topic == NULL) {
-        return false;
-    }
-
-    return strcmp(topic, s_node_ping_topic) == 0 || strcmp(topic, BROADCAST_PING_TOPIC) == 0;
+    return command_topic_matches(topic, s_node_ping_topic, BROADCAST_PING_TOPIC);
 }
 
 /* Return true when the topic is either the node-specific or broadcast reboot command topic. */
 bool topic_map_is_reboot_topic(const char *topic)
 {
-    if (topic == NULL) {
-        return false;
-    }
-
-    return strcmp(topic, s_node_reboot_topic) == 0 || strcmp(topic, BROADCAST_REBOOT_TOPIC) == 0;
+    return command_topic_matches(topic, s_node_reboot_topic, BROADCAST_REBOOT_TOPIC);
 }
 
 /* Return true when the topic is either the node-specific or broadcast config command topic. */
 bool topic_map_is_config_topic(const char *topic)
 {
-    if (topic == NULL) {
-        return false;
-    }
-
-    return strcmp(topic, s_node_config_topic) == 0 || strcmp(topic, BROADCAST_CONFIG_TOPIC) == 0;
+    return command_topic_matches(topic, s_node_config_topic, BROADCAST_CONFIG_TOPIC);
 }
 
 /* Return true when the topic is either the node-specific or broadcast capture command topic. */
 bool topic_map_is_capture_topic(const char *topic)
 {
-    if (topic == NULL) {
-        return false;
-    }
-
-    return strcmp(topic, s_node_capture_topic) == 0 || strcmp(topic, BROADCAST_CAPTURE_TOPIC) == 0;
+    return command_topic_matches(topic, s_node_capture_topic, BROADCAST_CAPTURE_TOPIC);
 }
 
 /* Format the reply topic that matches one request_id, for example vision/nodes/p4-001/reply/req-42. */

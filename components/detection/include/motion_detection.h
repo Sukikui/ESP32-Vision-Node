@@ -20,6 +20,9 @@ esp_err_t motion_detection_start(void);
 /* Re-read persisted runtime values and apply them to the live detector. */
 esp_err_t motion_detection_apply_runtime_config(void);
 
+/* Apply one explicit runtime state to the live detector without reading runtime_config. */
+esp_err_t motion_detection_apply_settings(bool enabled, uint32_t warmup_ms, uint32_t cooldown_ms);
+
 /* Return true when PIR support is compiled into this firmware build. */
 bool motion_detection_is_supported(void);
 

@@ -83,15 +83,22 @@ esp_err_t publish_queue_push(const char *topic, const void *data, size_t data_le
 {
     publish_queue_item_t item = {0};
 
-    if (s_queue == NULL || topic == NULL) {
+    if (topic == NULL || (data == NULL && data_len > 0)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (s_queue == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (strlen(topic) >= sizeof(item.topic) || data_len > sizeof(item.data)) {
+    if (data_len > sizeof(item.data)) {
         return ESP_ERR_INVALID_SIZE;
     }
 
-    strlcpy(item.topic, topic, sizeof(item.topic));
+    if (strlcpy(item.topic, topic, sizeof(item.topic)) >= sizeof(item.topic)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
     item.data_len = data_len;
     item.qos = qos;
     item.retain = retain;

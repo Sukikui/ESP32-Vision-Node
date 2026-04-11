@@ -100,6 +100,7 @@ External component dependencies are declared in the component manifests:
 
 - `components/connectivity/idf_component.yml` for `espressif/ip101`
 - `components/messaging/idf_component.yml` for `espressif/mqtt`
+- `components/messaging/idf_component.yml` for `espressif/cjson`
 
 The resolved versions are stored in `dependencies.lock`.
 
@@ -305,7 +306,7 @@ Purpose:
 
 Node-specific and broadcast commands use the same payload shape. The only difference is whether one node or all listening nodes should react.
 
-For `config`, supported runtime values are validated together, committed to NVS in one transaction, and then applied live. If one requested value is invalid, the previous persisted config is left unchanged.
+For `config`, supported runtime values are validated together, applied live as one staged update, and then committed to NVS in one transaction. If the live apply or persistence step fails, the previous live config is restored and the previous persisted config is left unchanged.
 
 The `motion_*` runtime keys are only accepted when PIR support is compiled into the firmware via `APP_HAS_MOTION_DETECTION`.
 

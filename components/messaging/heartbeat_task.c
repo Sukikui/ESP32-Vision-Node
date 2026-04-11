@@ -1,14 +1,15 @@
 #include "heartbeat_task.h"
 
 #include <inttypes.h>
-#include <stdio.h>
 
 #include "app_config.h"
+#include "cJSON.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "ethernet_service.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "json_utils.h"
 #include "mqtt_service.h"
 #include "topic_map.h"
 
@@ -20,27 +21,32 @@ static volatile uint32_t s_interval_s = APP_HEARTBEAT_INTERVAL_S;
 /* Build one JSON heartbeat payload and publish it forever at the configured interval. */
 static void heartbeat_task(void *arg)
 {
-    char payload[APP_JSON_PAYLOAD_MAX_LEN];
     char ip_address[16];
+    char payload[APP_JSON_PAYLOAD_MAX_LEN];
 
     while (true) {
+        cJSON *root = NULL;
         uint64_t uptime_s = (uint64_t)(esp_timer_get_time() / 1000000ULL);
 
         ethernet_service_get_ipv4_string(ip_address, sizeof(ip_address));
 
         /* Heartbeats are intentionally compact because this message is emitted for the whole lifetime of the node. */
-        if (snprintf(
-                payload,
-                sizeof(payload),
-                "{\"node_id\":\"%s\",\"ip\":\"%s\",\"uptime_s\":%" PRIu64 "}",
-                topic_map_get_node_id(),
-                ip_address,
-                uptime_s) < (int)sizeof(payload)) {
-            mqtt_service_publish_json(topic_map_get_status_heartbeat_topic(), payload, 0, false);
+        root = cJSON_CreateObject();
+        if (root == NULL) {
+            ESP_LOGE(TAG, "failed to allocate heartbeat JSON root");
         } else {
-            ESP_LOGE(TAG, "heartbeat payload too large");
+            cJSON_AddStringToObject(root, "node_id", topic_map_get_node_id());
+            cJSON_AddStringToObject(root, "ip", ip_address);
+            cJSON_AddNumberToObject(root, "uptime_s", (double)uptime_s);
+
+            if (json_utils_print_to_buffer(root, payload, sizeof(payload)) == ESP_OK) {
+                mqtt_service_publish_json(topic_map_get_status_heartbeat_topic(), payload, 0, false);
+            } else {
+                ESP_LOGE(TAG, "heartbeat payload too large");
+            }
         }
 
+        cJSON_Delete(root);
         vTaskDelay(pdMS_TO_TICKS(s_interval_s * 1000));
     }
 }

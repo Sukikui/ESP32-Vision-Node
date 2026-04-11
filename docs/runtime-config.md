@@ -62,10 +62,10 @@ Runtime updates currently come from `vision/nodes/{node_id}/cmd/config` and `vis
 | --- | --- |
 | 1 | `command_router.c` parses supported JSON keys into one `runtime_config_patch_t` |
 | 2 | the full patch is validated |
-| 3 | valid changed keys are persisted in one NVS transaction |
-| 4 | the in-memory runtime state is updated |
-| 5 | live modules re-apply the resulting values |
-| 6 | the reply payload returns the active values |
+| 3 | the resulting runtime snapshot is applied to the live modules |
+| 4 | valid changed keys are then persisted in one NVS transaction |
+| 5 | if the live apply or NVS transaction fails, the previous live state is restored |
+| 6 | the reply payload returns the active values after success or rollback |
 
 ## Validation Rules
 
@@ -86,17 +86,18 @@ Common request rules:
 | invalid supported value | reject the whole update |
 | unsupported feature key for this build | reject the whole update as `unsupported_feature` |
 
-## Atomic Persistence
+## Atomic Update
 
-`cmd/config` persistence is all-or-nothing at the runtime-config level.
+`cmd/config` is handled as one logical all-or-nothing update.
 
 | Case | Result |
 | --- | --- |
-| full patch is valid and `nvs_commit()` succeeds | all changed keys are accepted and become the new persisted state |
-| one requested value is invalid | no key from that patch is committed |
-| `nvs_commit()` fails | no new persisted state is accepted |
+| full patch is valid, live apply succeeds, and `nvs_commit()` succeeds | the new values become both the live state and the persisted state |
+| one requested value is invalid | no live state or persisted key changes |
+| live apply fails | no persisted key changes and the previous live state is kept |
+| `nvs_commit()` fails after live apply | the previous live state is restored and no new persisted state is accepted |
 
-This prevents partial persistent updates from one failing config command.
+This prevents one failing config command from leaving either a partial persisted update or a partial live update behind.
 
 ## Feature Gates
 

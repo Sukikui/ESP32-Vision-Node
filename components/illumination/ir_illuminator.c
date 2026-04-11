@@ -27,10 +27,10 @@ static int ir_illuminator_output_level(bool on)
     return on ? 0 : 1;
 }
 
-/* Resolve the current runtime mode into the output state that should be driven right now. */
-static bool ir_illuminator_should_be_on(void)
+/* Resolve one explicit mode into the output state that should be driven right now. */
+static bool ir_illuminator_should_be_on_for_mode(ir_illuminator_mode_t mode)
 {
-    switch (runtime_config_get_ir_illuminator_mode()) {
+    switch (mode) {
     case IR_ILLUMINATOR_MODE_OFF:
         return false;
     case IR_ILLUMINATOR_MODE_ON:
@@ -52,11 +52,10 @@ static esp_err_t ir_illuminator_drive_output(bool on)
     return ESP_OK;
 }
 
-/* Recompute the output from runtime config and optional capture state. */
-static esp_err_t ir_illuminator_apply_output(const char *reason)
+/* Recompute the output from one explicit mode and optional capture state. */
+static esp_err_t ir_illuminator_apply_output(ir_illuminator_mode_t mode, const char *reason)
 {
     bool desired_on;
-    ir_illuminator_mode_t mode;
 
     if (!APP_HAS_IR_ILLUMINATOR) {
         return ESP_OK;
@@ -64,8 +63,7 @@ static esp_err_t ir_illuminator_apply_output(const char *reason)
 
     ESP_RETURN_ON_FALSE(s_state.initialized, ESP_ERR_INVALID_STATE, TAG, "IR illuminator not initialized");
 
-    mode = runtime_config_get_ir_illuminator_mode();
-    desired_on = ir_illuminator_should_be_on();
+    desired_on = ir_illuminator_should_be_on_for_mode(mode);
 
     ESP_RETURN_ON_ERROR(ir_illuminator_drive_output(desired_on), TAG, "failed to update IR illuminator output");
 
@@ -113,7 +111,19 @@ esp_err_t ir_illuminator_init(void)
 /* Apply the persisted runtime mode to the already configured output. */
 esp_err_t ir_illuminator_apply_runtime_config(void)
 {
-    return ir_illuminator_apply_output("runtime config");
+    return ir_illuminator_apply_output(runtime_config_get_ir_illuminator_mode(), "runtime config");
+}
+
+/* Apply one explicit runtime mode to the live output without reading runtime_config. */
+esp_err_t ir_illuminator_apply_mode(ir_illuminator_mode_t mode)
+{
+    if (mode != IR_ILLUMINATOR_MODE_OFF
+        && mode != IR_ILLUMINATOR_MODE_ON
+        && mode != IR_ILLUMINATOR_MODE_CAPTURE) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    return ir_illuminator_apply_output(mode, "explicit mode");
 }
 
 /* Let future camera code signal the beginning and end of an actual capture session. */
@@ -131,7 +141,8 @@ esp_err_t ir_illuminator_set_capture_active(bool capture_active)
      * Only CAPTURE mode reacts to this flag today, but recomputing the full output state here keeps
      * the behavior centralized and avoids duplicating mode checks in future camera code.
      */
-    return ir_illuminator_apply_output(capture_active ? "capture started" : "capture stopped");
+    return ir_illuminator_apply_output(runtime_config_get_ir_illuminator_mode(),
+                                       capture_active ? "capture started" : "capture stopped");
 }
 
 /* Report whether IR illuminator support is compiled into this firmware build. */

@@ -18,7 +18,7 @@ typedef enum {
 /* Fixed-size buffers used to keep topic strings in RAM. */
 #define APP_TOPIC_MAX_LEN CONFIG_APP_TOPIC_MAX_LEN
 
-/* Small JSON payloads are built in local stack buffers before publication. */
+/* Small JSON payloads stay bounded even when they are built dynamically before publication. */
 #define APP_JSON_PAYLOAD_MAX_LEN CONFIG_APP_JSON_PAYLOAD_MAX_LEN
 
 /* Request IDs are copied out of incoming command payloads before routing. */

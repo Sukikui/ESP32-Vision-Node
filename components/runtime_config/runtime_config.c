@@ -102,7 +102,7 @@ static esp_err_t nvs_write_bool_value(nvs_handle_t handle, const char *key, bool
 }
 
 /* Validate the whole patch before any RAM or NVS state is modified. */
-static esp_err_t runtime_config_validate_patch(const runtime_config_patch_t *patch)
+static esp_err_t runtime_config_validate_patch_internal(const runtime_config_patch_t *patch)
 {
     ESP_RETURN_ON_FALSE(patch != NULL, ESP_ERR_INVALID_ARG, TAG, "invalid runtime config patch");
 
@@ -463,7 +463,7 @@ bool runtime_config_parse_ir_illuminator_mode(const char *text, ir_illuminator_m
 esp_err_t runtime_config_apply_patch(const runtime_config_patch_t *patch, bool persist)
 {
     ESP_RETURN_ON_FALSE(s_state.initialized, ESP_ERR_INVALID_STATE, TAG, "runtime config not initialized");
-    ESP_RETURN_ON_ERROR(runtime_config_validate_patch(patch), TAG, "invalid runtime config patch");
+    ESP_RETURN_ON_ERROR(runtime_config_validate_patch_internal(patch), TAG, "invalid runtime config patch");
 
     if (runtime_config_patch_is_empty(patch)) {
         return ESP_OK;
@@ -475,4 +475,11 @@ esp_err_t runtime_config_apply_patch(const runtime_config_patch_t *patch, bool p
 
     runtime_config_apply_patch_to_state(patch);
     return ESP_OK;
+}
+
+/* Validate one patch without applying it so callers can stage live changes first. */
+esp_err_t runtime_config_validate_patch(const runtime_config_patch_t *patch)
+{
+    ESP_RETURN_ON_FALSE(s_state.initialized, ESP_ERR_INVALID_STATE, TAG, "runtime config not initialized");
+    return runtime_config_validate_patch_internal(patch);
 }

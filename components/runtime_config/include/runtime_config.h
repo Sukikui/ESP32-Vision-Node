@@ -58,5 +58,8 @@ const char *runtime_config_ir_illuminator_mode_to_string(ir_illuminator_mode_t m
 /* Parse one MQTT-friendly IR illuminator mode string into the internal enum. */
 bool runtime_config_parse_ir_illuminator_mode(const char *text, ir_illuminator_mode_t *out_mode);
 
+/* Validate one runtime patch without modifying RAM state or persisting anything. */
+esp_err_t runtime_config_validate_patch(const runtime_config_patch_t *patch);
+
 /* Validate and apply a group of runtime changes as one logical update. */
 esp_err_t runtime_config_apply_patch(const runtime_config_patch_t *patch, bool persist);
