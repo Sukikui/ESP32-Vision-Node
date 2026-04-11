@@ -37,21 +37,6 @@ uint32_t runtime_config_get_motion_cooldown_ms(void);
 /* Return the active IR illuminator mode after defaults and any NVS override have been applied. */
 ir_illuminator_mode_t runtime_config_get_ir_illuminator_mode(void);
 
-/* Update the heartbeat interval in RAM and optionally commit it to NVS for the next reboot. */
-esp_err_t runtime_config_set_heartbeat_interval_s(uint32_t interval_s, bool persist);
-
-/* Update the persisted runtime flag that enables or disables PIR detection at boot. */
-esp_err_t runtime_config_set_motion_detection_enabled(bool enabled, bool persist);
-
-/* Update the persisted PIR warm-up period used after boot or re-arming. */
-esp_err_t runtime_config_set_motion_warmup_ms(uint32_t warmup_ms, bool persist);
-
-/* Update the persisted PIR cooldown period used to filter repeated triggers. */
-esp_err_t runtime_config_set_motion_cooldown_ms(uint32_t cooldown_ms, bool persist);
-
-/* Update the persisted IR illuminator mode used after boot. */
-esp_err_t runtime_config_set_ir_illuminator_mode(ir_illuminator_mode_t mode, bool persist);
-
 /* Convert one IR illuminator mode into the MQTT-friendly string used in docs and replies. */
 const char *runtime_config_ir_illuminator_mode_to_string(ir_illuminator_mode_t mode);
 

@@ -115,13 +115,3 @@ esp_err_t publish_queue_push(const char *topic, const void *data, size_t data_le
 
     return ESP_OK;
 }
-
-/* Return the current queued message count for diagnostics. */
-size_t publish_queue_get_depth(void)
-{
-    if (s_queue == NULL) {
-        return 0;
-    }
-
-    return (size_t)uxQueueMessagesWaiting(s_queue);
-}

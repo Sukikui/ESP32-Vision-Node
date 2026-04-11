@@ -11,9 +11,6 @@ esp_err_t mqtt_service_init(void);
 /* Start the MQTT client after initialization. */
 esp_err_t mqtt_service_start(void);
 
-/* Return true when the MQTT session is currently connected. */
-bool mqtt_service_is_connected(void);
-
 /* Queue a JSON payload for publication through the RAM-backed publish queue. */
 esp_err_t mqtt_service_publish_json(const char *topic, const char *json, int qos, bool retain);
 

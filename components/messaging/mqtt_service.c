@@ -189,12 +189,6 @@ esp_err_t mqtt_service_start(void)
     return esp_mqtt_client_start(s_client);
 }
 
-/* Report whether the broker session is currently connected. */
-bool mqtt_service_is_connected(void)
-{
-    return s_connected;
-}
-
 /* Convert one NUL-terminated JSON string into bytes and enqueue it for publication. */
 esp_err_t mqtt_service_publish_json(const char *topic, const char *json, int qos, bool retain)
 {

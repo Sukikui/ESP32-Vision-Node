@@ -203,14 +203,6 @@ esp_err_t motion_detection_start(void)
                                                     runtime_config_get_motion_cooldown_ms());
 }
 
-/* Re-read persisted runtime values and apply them to the live detector. */
-esp_err_t motion_detection_apply_runtime_config(void)
-{
-    return motion_detection_apply_settings_internal(runtime_config_get_motion_detection_enabled(),
-                                                    runtime_config_get_motion_warmup_ms(),
-                                                    runtime_config_get_motion_cooldown_ms());
-}
-
 /* Apply one explicit runtime state to the live detector without reading runtime_config. */
 esp_err_t motion_detection_apply_settings(bool enabled, uint32_t warmup_ms, uint32_t cooldown_ms)
 {

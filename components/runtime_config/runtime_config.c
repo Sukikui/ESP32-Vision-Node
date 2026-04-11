@@ -364,61 +364,6 @@ ir_illuminator_mode_t runtime_config_get_ir_illuminator_mode(void)
     return APP_HAS_IR_ILLUMINATOR ? s_state.ir_illuminator_mode : IR_ILLUMINATOR_MODE_OFF;
 }
 
-/* Update the in-memory value and optionally mirror it to NVS for the next boot. */
-esp_err_t runtime_config_set_heartbeat_interval_s(uint32_t interval_s, bool persist)
-{
-    runtime_config_patch_t patch = {
-        .has_heartbeat_interval_s = true,
-        .heartbeat_interval_s = interval_s,
-    };
-
-    return runtime_config_apply_patch(&patch, persist);
-}
-
-/* Update the persisted runtime flag that enables or disables PIR detection. */
-esp_err_t runtime_config_set_motion_detection_enabled(bool enabled, bool persist)
-{
-    runtime_config_patch_t patch = {
-        .has_motion_detection_enabled = true,
-        .motion_detection_enabled = enabled,
-    };
-
-    return runtime_config_apply_patch(&patch, persist);
-}
-
-/* Update the PIR warm-up period kept in RAM and optionally store it for the next reboot. */
-esp_err_t runtime_config_set_motion_warmup_ms(uint32_t warmup_ms, bool persist)
-{
-    runtime_config_patch_t patch = {
-        .has_motion_warmup_ms = true,
-        .motion_warmup_ms = warmup_ms,
-    };
-
-    return runtime_config_apply_patch(&patch, persist);
-}
-
-/* Update the PIR cooldown period kept in RAM and optionally store it for the next reboot. */
-esp_err_t runtime_config_set_motion_cooldown_ms(uint32_t cooldown_ms, bool persist)
-{
-    runtime_config_patch_t patch = {
-        .has_motion_cooldown_ms = true,
-        .motion_cooldown_ms = cooldown_ms,
-    };
-
-    return runtime_config_apply_patch(&patch, persist);
-}
-
-/* Update the IR illuminator runtime policy in RAM and optionally store it for the next reboot. */
-esp_err_t runtime_config_set_ir_illuminator_mode(ir_illuminator_mode_t mode, bool persist)
-{
-    runtime_config_patch_t patch = {
-        .has_ir_illuminator_mode = true,
-        .ir_illuminator_mode = mode,
-    };
-
-    return runtime_config_apply_patch(&patch, persist);
-}
-
 /* Convert one IR illuminator mode into the stable string used in MQTT payloads and docs. */
 const char *runtime_config_ir_illuminator_mode_to_string(ir_illuminator_mode_t mode)
 {

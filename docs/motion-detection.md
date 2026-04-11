@@ -108,7 +108,6 @@ If `APP_HAS_MOTION_DETECTION` is disabled:
 | --- | --- |
 | `motion_detection_init()` | configure the GPIO, ISR, and worker task |
 | `motion_detection_start()` | apply runtime config and start detection if enabled |
-| `motion_detection_apply_runtime_config()` | re-read runtime values and apply them live |
 | `motion_detection_is_supported()` | report whether PIR support exists in the current build |
 | `motion_detection_is_armed()` | report whether detection is running and past warm-up |
 | `motion_detection_get_last_trigger_us()` | return the timestamp of the last accepted trigger |
