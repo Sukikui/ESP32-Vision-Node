@@ -1,6 +1,7 @@
 #include "runtime_config.h"
 
 #include <inttypes.h>
+#include <string.h>
 
 #include "app_config.h"
 #include "esp_check.h"
@@ -13,6 +14,7 @@
 #define RUNTIME_CONFIG_MOTION_ENABLED_KEY "motion_en"
 #define RUNTIME_CONFIG_MOTION_WARMUP_KEY "motion_wu"
 #define RUNTIME_CONFIG_MOTION_COOLDOWN_KEY "motion_cd"
+#define RUNTIME_CONFIG_IR_ILLUMINATOR_MODE_KEY "ir_mode"
 
 static const char *TAG = "runtime_config";
 
@@ -22,6 +24,7 @@ typedef struct {
     bool motion_detection_enabled;
     uint32_t motion_warmup_ms;
     uint32_t motion_cooldown_ms;
+    ir_illuminator_mode_t ir_illuminator_mode;
 } runtime_config_state_t;
 
 static runtime_config_state_t s_state = {
@@ -30,6 +33,7 @@ static runtime_config_state_t s_state = {
     .motion_detection_enabled = APP_MOTION_DEFAULT_ENABLED,
     .motion_warmup_ms = APP_MOTION_DEFAULT_WARMUP_MS,
     .motion_cooldown_ms = APP_MOTION_DEFAULT_COOLDOWN_MS,
+    .ir_illuminator_mode = APP_IR_ILLUMINATOR_DEFAULT_MODE,
 };
 
 /* Keep runtime validation aligned with the live heartbeat task expectations. */
@@ -50,13 +54,22 @@ static bool motion_cooldown_is_valid(uint32_t cooldown_ms)
     return cooldown_ms <= 60000;
 }
 
+/* Keep runtime validation aligned with the supported IR control policies documented for the firmware. */
+static bool ir_illuminator_mode_is_valid(ir_illuminator_mode_t mode)
+{
+    return mode == IR_ILLUMINATOR_MODE_OFF
+        || mode == IR_ILLUMINATOR_MODE_ON
+        || mode == IR_ILLUMINATOR_MODE_CAPTURE;
+}
+
 /* Return true when the patch carries no changes at all. */
 static bool runtime_config_patch_is_empty(const runtime_config_patch_t *patch)
 {
     return !patch->has_heartbeat_interval_s
         && !patch->has_motion_detection_enabled
         && !patch->has_motion_warmup_ms
-        && !patch->has_motion_cooldown_ms;
+        && !patch->has_motion_cooldown_ms
+        && !patch->has_ir_illuminator_mode;
 }
 
 /* Open the dedicated NVS namespace used by this component. */
@@ -110,6 +123,14 @@ static esp_err_t runtime_config_validate_patch(const runtime_config_patch_t *pat
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (!APP_HAS_IR_ILLUMINATOR && patch->has_ir_illuminator_mode) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    if (patch->has_ir_illuminator_mode && !ir_illuminator_mode_is_valid(patch->ir_illuminator_mode)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     return ESP_OK;
 }
 
@@ -137,6 +158,10 @@ static esp_err_t runtime_config_persist_patch(const runtime_config_patch_t *patc
 
     if (err == ESP_OK && patch->has_motion_cooldown_ms) {
         err = nvs_write_u32_value(handle, RUNTIME_CONFIG_MOTION_COOLDOWN_KEY, patch->motion_cooldown_ms);
+    }
+
+    if (err == ESP_OK && patch->has_ir_illuminator_mode) {
+        err = nvs_write_u32_value(handle, RUNTIME_CONFIG_IR_ILLUMINATOR_MODE_KEY, (uint32_t)patch->ir_illuminator_mode);
     }
 
     if (err == ESP_OK) {
@@ -168,6 +193,10 @@ static void runtime_config_apply_patch_to_state(const runtime_config_patch_t *pa
     if (patch->has_motion_cooldown_ms) {
         s_state.motion_cooldown_ms = patch->motion_cooldown_ms;
     }
+
+    if (patch->has_ir_illuminator_mode) {
+        s_state.ir_illuminator_mode = patch->ir_illuminator_mode;
+    }
 }
 
 /* Seed runtime values from Kconfig defaults, then overwrite them with any saved NVS values. */
@@ -177,6 +206,7 @@ esp_err_t runtime_config_init(void)
     uint32_t stored_heartbeat_interval_s = APP_HEARTBEAT_INTERVAL_S;
     uint32_t stored_motion_warmup_ms = APP_MOTION_DEFAULT_WARMUP_MS;
     uint32_t stored_motion_cooldown_ms = APP_MOTION_DEFAULT_COOLDOWN_MS;
+    uint32_t stored_ir_illuminator_mode = (uint32_t)APP_IR_ILLUMINATOR_DEFAULT_MODE;
     uint8_t stored_motion_detection_enabled = APP_MOTION_DEFAULT_ENABLED ? 1 : 0;
     esp_err_t err;
     esp_err_t read_err;
@@ -186,6 +216,7 @@ esp_err_t runtime_config_init(void)
     s_state.motion_detection_enabled = APP_MOTION_DEFAULT_ENABLED;
     s_state.motion_warmup_ms = APP_MOTION_DEFAULT_WARMUP_MS;
     s_state.motion_cooldown_ms = APP_MOTION_DEFAULT_COOLDOWN_MS;
+    s_state.ir_illuminator_mode = APP_IR_ILLUMINATOR_DEFAULT_MODE;
 
     err = open_runtime_config_nvs(NVS_READWRITE, &handle);
     if (err != ESP_OK) {
@@ -268,6 +299,31 @@ esp_err_t runtime_config_init(void)
         ESP_LOGE(TAG, "failed to read motion cooldown from NVS: %s", esp_err_to_name(read_err));
     }
 
+    read_err = nvs_get_u32(handle, RUNTIME_CONFIG_IR_ILLUMINATOR_MODE_KEY, &stored_ir_illuminator_mode);
+    if (read_err == ESP_OK) {
+        if (ir_illuminator_mode_is_valid((ir_illuminator_mode_t)stored_ir_illuminator_mode)) {
+            if (!APP_HAS_IR_ILLUMINATOR && stored_ir_illuminator_mode != (uint32_t)IR_ILLUMINATOR_MODE_OFF) {
+                s_state.ir_illuminator_mode = IR_ILLUMINATOR_MODE_OFF;
+                ESP_LOGW(TAG,
+                         "ignoring persisted ir_illuminator_mode=%s because IR illuminator support is not compiled into this build",
+                         runtime_config_ir_illuminator_mode_to_string((ir_illuminator_mode_t)stored_ir_illuminator_mode));
+            } else {
+                s_state.ir_illuminator_mode = (ir_illuminator_mode_t)stored_ir_illuminator_mode;
+                ESP_LOGI(TAG,
+                         "restored ir_illuminator_mode=%s from NVS",
+                         runtime_config_ir_illuminator_mode_to_string(s_state.ir_illuminator_mode));
+            }
+        } else {
+            ESP_LOGW(TAG,
+                     "ignoring invalid persisted ir_illuminator_mode=%" PRIu32 ", keeping default=%s",
+                     stored_ir_illuminator_mode,
+                     runtime_config_ir_illuminator_mode_to_string(APP_IR_ILLUMINATOR_DEFAULT_MODE));
+        }
+    } else if (read_err != ESP_ERR_NVS_NOT_FOUND && err == ESP_OK) {
+        err = read_err;
+        ESP_LOGE(TAG, "failed to read IR illuminator mode from NVS: %s", esp_err_to_name(read_err));
+    }
+
     nvs_close(handle);
 
     if (err == ESP_OK) {
@@ -300,6 +356,12 @@ uint32_t runtime_config_get_motion_warmup_ms(void)
 uint32_t runtime_config_get_motion_cooldown_ms(void)
 {
     return s_state.motion_cooldown_ms;
+}
+
+/* Expose the active IR illuminator mode selected from defaults and optional NVS override. */
+ir_illuminator_mode_t runtime_config_get_ir_illuminator_mode(void)
+{
+    return APP_HAS_IR_ILLUMINATOR ? s_state.ir_illuminator_mode : IR_ILLUMINATOR_MODE_OFF;
 }
 
 /* Update the in-memory value and optionally mirror it to NVS for the next boot. */
@@ -344,6 +406,57 @@ esp_err_t runtime_config_set_motion_cooldown_ms(uint32_t cooldown_ms, bool persi
     };
 
     return runtime_config_apply_patch(&patch, persist);
+}
+
+/* Update the IR illuminator runtime policy in RAM and optionally store it for the next reboot. */
+esp_err_t runtime_config_set_ir_illuminator_mode(ir_illuminator_mode_t mode, bool persist)
+{
+    runtime_config_patch_t patch = {
+        .has_ir_illuminator_mode = true,
+        .ir_illuminator_mode = mode,
+    };
+
+    return runtime_config_apply_patch(&patch, persist);
+}
+
+/* Convert one IR illuminator mode into the stable string used in MQTT payloads and docs. */
+const char *runtime_config_ir_illuminator_mode_to_string(ir_illuminator_mode_t mode)
+{
+    switch (mode) {
+    case IR_ILLUMINATOR_MODE_OFF:
+        return "off";
+    case IR_ILLUMINATOR_MODE_ON:
+        return "on";
+    case IR_ILLUMINATOR_MODE_CAPTURE:
+        return "capture";
+    default:
+        return "unknown";
+    }
+}
+
+/* Parse one MQTT-facing mode string into the internal enum used by the runtime config. */
+bool runtime_config_parse_ir_illuminator_mode(const char *text, ir_illuminator_mode_t *out_mode)
+{
+    if (text == NULL || out_mode == NULL) {
+        return false;
+    }
+
+    if (strcmp(text, "off") == 0) {
+        *out_mode = IR_ILLUMINATOR_MODE_OFF;
+        return true;
+    }
+
+    if (strcmp(text, "on") == 0) {
+        *out_mode = IR_ILLUMINATOR_MODE_ON;
+        return true;
+    }
+
+    if (strcmp(text, "capture") == 0) {
+        *out_mode = IR_ILLUMINATOR_MODE_CAPTURE;
+        return true;
+    }
+
+    return false;
 }
 
 /* Validate and apply a group of runtime changes as one logical update. */

@@ -1,193 +1,135 @@
-# PIR Motion Detection
+# Motion Detection
 
 ## Overview
 
-This document describes how the optional PIR motion detection path works in the firmware.
+This document describes the PIR motion detection path implemented in the firmware.
 
-It covers:
+The MQTT topic contract remains documented in [`ethernet-mqtt.md`](./ethernet-mqtt.md). Persisted runtime values remain documented in [`runtime-config.md`](./runtime-config.md).
 
-- the hardware model assumed by the firmware
-- the difference between build-time support and runtime enablement
-- the internal detection flow from GPIO interrupt to MQTT event
-- the warm-up and cooldown timing model
-- the runtime parameters that can be changed through `cmd/config`
+## Configuration Entries
 
-The MQTT topic contract itself is documented in [`ethernet-mqtt.md`](./ethernet-mqtt.md). This document focuses on the local node-side behavior.
+### Build-Time and Default Runtime Values
 
-## Hardware Model
+| Key | Type | Default | Depends on | Purpose |
+| --- | --- | --- | --- | --- |
+| `APP_HAS_MOTION_DETECTION` | `bool` | `n` | none | Build-time gate for PIR support |
+| `APP_MOTION_PIR_GPIO` | `int` | `10` | `APP_HAS_MOTION_DETECTION` | GPIO connected to the PIR digital output |
+| `APP_MOTION_PIR_ACTIVE_HIGH` | `bool` | `y` | `APP_HAS_MOTION_DETECTION` | Use rising edge when the PIR drives the line high on motion |
+| `APP_MOTION_DEFAULT_ENABLED` | `bool` | `y` | `APP_HAS_MOTION_DETECTION` | Default runtime enabled state used before any persisted override exists |
+| `APP_MOTION_DEFAULT_WARMUP_MS` | `int` | `30000` | `APP_HAS_MOTION_DETECTION` | Default warm-up time used before any persisted override exists |
+| `APP_MOTION_DEFAULT_COOLDOWN_MS` | `int` | `5000` | `APP_HAS_MOTION_DETECTION` | Default cooldown time used before any persisted override exists |
 
-The current implementation assumes one PIR module connected to one GPIO digital input.
+### Persisted Runtime Values
 
-Important characteristics:
-
-- the PIR is treated as a binary trigger source, not as an analog sensor
-- one edge on the configured GPIO means "the PIR reported motion"
-- the expected active edge depends on the module polarity
-- the firmware currently supports one PIR input only
-
-The build-time hardware mapping is defined through `menuconfig`:
-
-| Key | Meaning |
-| --- | --- |
-| `APP_HAS_MOTION_DETECTION` | compile PIR support into this firmware build |
-| `APP_MOTION_PIR_GPIO` | GPIO connected to the PIR digital output |
-| `APP_MOTION_PIR_ACTIVE_HIGH` | use rising edge when the PIR drives the line high on motion |
+| Runtime key | NVS key | Feature gate | Meaning |
+| --- | --- | --- | --- |
+| `motion_detection_enabled` | `motion_en` | `APP_HAS_MOTION_DETECTION` | Enable or disable PIR detection at runtime |
+| `motion_warmup_ms` | `motion_wu` | `APP_HAS_MOTION_DETECTION` | Active warm-up time |
+| `motion_cooldown_ms` | `motion_cd` | `APP_HAS_MOTION_DETECTION` | Active cooldown time |
 
 If `APP_HAS_MOTION_DETECTION` is disabled:
 
 - the PIR GPIO is not configured
 - the motion detection task is not started
-- the event bridge in `main.c` is not registered
-- runtime MQTT updates for `motion_*` settings are rejected as `unsupported_feature`
+- runtime `motion_*` updates are rejected as `unsupported_feature`
 
-## Build-Time Support vs Runtime Enable
+## Runtime Model
 
-The PIR feature has two layers that must stay separate.
-
-| Layer | Key | Meaning |
-| --- | --- | --- |
-| Build-time support | `APP_HAS_MOTION_DETECTION` | this firmware build includes PIR support and expects PIR-related hardware configuration |
-| Build-time default | `APP_MOTION_DEFAULT_ENABLED` | default runtime state used on first boot before any NVS override exists |
-| Build-time default | `APP_MOTION_DEFAULT_WARMUP_MS` | default warm-up duration used on first boot before any NVS override exists |
-| Build-time default | `APP_MOTION_DEFAULT_COOLDOWN_MS` | default cooldown duration used on first boot before any NVS override exists |
-| Runtime override | `motion_detection_enabled` | persisted flag that enables or disables PIR detection at runtime |
-| Runtime override | `motion_warmup_ms` | persisted warm-up override |
-| Runtime override | `motion_cooldown_ms` | persisted cooldown override |
-
-In short:
-
-- `APP_HAS_MOTION_DETECTION` answers "does this firmware build support PIR at all?"
-- `motion_detection_enabled` answers "if PIR support exists, should detection currently run?"
-
-This separation avoids mixing:
-
-- hardware and build capabilities
-- runtime operating state
-
-## Detection Flow
-
-The internal flow is intentionally split into small steps so the GPIO interrupt stays minimal and MQTT stays outside the detector.
-
-1. `main.c` creates the default event loop and registers a motion event handler only when `motion_detection_is_supported()` is true.
-2. `motion_detection_init()` validates the configured GPIO, configures it as an input, installs the GPIO ISR service, adds the PIR ISR handler, and creates one worker task.
-3. The ISR does not publish MQTT messages and does not run timing logic. It only wakes the worker task with a task notification.
-4. `motion_detection_start()` reads the active runtime settings from `runtime_config` and decides whether the detector should start armed or disabled.
-5. The worker task waits for GPIO-trigger notifications.
-6. When a trigger arrives, the worker applies the warm-up and cooldown rules before accepting it.
-7. When a trigger is accepted, `motion_detection.c` posts `MOTION_DETECTION_EVENT_TRIGGERED` on the default ESP event loop with the accepted trigger timestamp.
-8. The handler in `main.c` receives that internal event and calls `node_event_publish("motion_detected")`.
-9. `node_event_publish()` publishes the MQTT event on `vision/nodes/{node_id}/event`.
-
-This split keeps responsibilities clear:
-
-- `motion_detection.c` knows GPIO, timing, and trigger filtering
-- `main.c` bridges the internal event into the messaging layer
-- `node_event.c` owns the MQTT event publication
-
-## Warm-up and Cooldown
-
-The PIR path uses two timing windows:
-
-| Parameter | Meaning |
+| Term | Meaning |
 | --- | --- |
-| `motion_warmup_ms` | time after startup or re-enable during which triggers are ignored |
-| `motion_cooldown_ms` | minimum delay between two accepted triggers |
+| `supported` | PIR support is compiled into the firmware build |
+| `enabled` | runtime config currently allows PIR detection |
+| `started` | the detector is actively running inside the component |
+| `armed` | the detector is started and the warm-up window has already elapsed |
 
-### Warm-up
+## Signal Path
 
-Warm-up exists because many PIR modules are unstable just after they are powered or re-armed.
+| Step | Component | Action |
+| --- | --- | --- |
+| 1 | `main.c` | register the motion event handler on the default event loop when PIR support exists |
+| 2 | `motion_detection_init()` | configure the GPIO, install the ISR service, add the ISR handler, create the worker task |
+| 3 | `motion_detection_start()` | load the active runtime values and decide whether detection starts enabled or disabled |
+| 4 | GPIO ISR | wake the worker task only; no timing logic and no MQTT work in interrupt context |
+| 5 | worker task | apply warm-up and cooldown filtering |
+| 6 | `motion_detection.c` | post `MOTION_DETECTION_EVENT_TRIGGERED` with the accepted trigger timestamp |
+| 7 | `main.c` | translate the internal event into `node_event_publish("motion_detected")` |
+| 8 | `node_event.c` | publish the MQTT event on `vision/nodes/{node_id}/event` |
 
-During warm-up:
+## Trigger Filtering
 
-- GPIO edges may still happen
-- the worker task still wakes up
-- but every trigger is ignored until the warm-up deadline is reached
+| Parameter | Effect |
+| --- | --- |
+| `motion_warmup_ms` | Ignore triggers until the detector has been stable long enough after start or re-enable |
+| `motion_cooldown_ms` | Ignore triggers that arrive too soon after the previous accepted trigger |
 
-The current implementation starts a fresh warm-up window:
+### Warm-up Behavior
 
-- on normal detector start
-- when runtime config re-enables the detector after it was disabled
+| Situation | Behavior |
+| --- | --- |
+| normal detector start | start a fresh warm-up window |
+| detector re-enabled by runtime config | start a fresh warm-up window |
+| trigger during warm-up | ignored |
 
-### Cooldown
+### Cooldown Behavior
 
-Cooldown prevents one physical motion event from producing several MQTT events in a very short time.
+| Situation | Behavior |
+| --- | --- |
+| accepted trigger | record its timestamp |
+| next trigger arrives before cooldown expires | ignored |
+| next trigger arrives after cooldown expires | accepted |
 
-During cooldown:
+### Live Runtime Updates
 
-- the detector remembers the timestamp of the last accepted trigger
-- a new edge is ignored if it arrives too soon after that timestamp
+| Update | Effect |
+| --- | --- |
+| change `motion_warmup_ms` while running | affects future checks only |
+| change `motion_cooldown_ms` while running | affects future checks only |
+| disable detection | stop the detector state and clear timing state |
+| re-enable detection | start again with a fresh warm-up window |
 
-### Live updates
+## Internal Interface
 
-Runtime updates behave like this:
+### Event Base
 
-- changing `motion_warmup_ms` or `motion_cooldown_ms` while the detector is already running updates future checks
-- changing those values does not reset the current warm-up window or the last accepted trigger timestamp
-- disabling detection clears the current started state
-- re-enabling detection starts a fresh warm-up window
+| Item | Meaning |
+| --- | --- |
+| `MOTION_DETECTION_EVENT` | internal ESP event base used by the detector |
+| `MOTION_DETECTION_EVENT_TRIGGERED` | event ID posted when one trigger survives filtering |
 
-## Runtime Parameters
+### Event Payload
 
-The PIR-related runtime keys are updated through the same MQTT `cmd/config` command described in [`ethernet-mqtt.md`](./ethernet-mqtt.md).
+| Field | Type | Meaning |
+| --- | --- | --- |
+| accepted trigger timestamp | `int64_t` | value returned by `esp_timer_get_time()` when the trigger is accepted |
 
-Example payload:
+### Public API
 
-```json
-{
-  "request_id": "req-42",
-  "motion_detection_enabled": true,
-  "motion_warmup_ms": 30000,
-  "motion_cooldown_ms": 5000
-}
-```
-
-Current behavior:
-
-- missing keys leave the current runtime value unchanged
-- unknown keys are ignored
-- supported keys are validated together before persistence
-- valid updates are stored in NVS and then applied to the live detector
-- if PIR support is not compiled into the current build, the `motion_*` block is rejected as `unsupported_feature`
-
-The persistence model itself is documented in [`runtime-config.md`](./runtime-config.md).
-
-## Internal Events
-
-The detector publishes one internal event base:
-
-- `MOTION_DETECTION_EVENT`
-
-And one event ID:
-
-- `MOTION_DETECTION_EVENT_TRIGGERED`
-
-The event payload is a single `int64_t` timestamp in microseconds, taken from `esp_timer_get_time()` when the trigger is accepted.
-
-This event is internal to the firmware. It is not itself an MQTT payload.
+| Function | Purpose |
+| --- | --- |
+| `motion_detection_init()` | configure the GPIO, ISR, and worker task |
+| `motion_detection_start()` | apply runtime config and start detection if enabled |
+| `motion_detection_apply_runtime_config()` | re-read runtime values and apply them live |
+| `motion_detection_is_supported()` | report whether PIR support exists in the current build |
+| `motion_detection_is_armed()` | report whether detection is running and past warm-up |
+| `motion_detection_get_last_trigger_us()` | return the timestamp of the last accepted trigger |
 
 ## MQTT Interaction
 
-The detector does not publish MQTT directly.
+| Item | Value |
+| --- | --- |
+| emitted MQTT event | `motion_detected` |
+| emitted topic | `vision/nodes/{node_id}/event` |
+| direct MQTT code inside `motion_detection.c` | none |
+| runtime MQTT config path | `cmd/config` |
 
-Its MQTT-visible effect is:
+The detector itself does not publish MQTT directly. It emits an internal event, and the application layer bridges that event into the messaging layer.
 
-- one accepted PIR trigger becomes one `motion_detected` node event
+## Current Limits
 
-This means:
-
-- PIR logic stays independent from MQTT client code
-- the same internal event could later trigger other actions such as image capture without rewriting the detector itself
-
-The MQTT topic, payload shape, and surrounding control-plane behavior remain documented in [`ethernet-mqtt.md`](./ethernet-mqtt.md).
-
-## Current Limitations
-
-The current implementation is intentionally narrow:
-
-- one digital PIR input only
-- no auto-capture behavior yet
-- no separate `motion_cleared` event
-- no per-trigger metadata beyond the accepted timestamp inside the internal event
-- no dedicated MQTT reset command for PIR settings yet
-
-This keeps the PIR path small and predictable while the rest of the vision stack is still evolving.
+| Area | Current behavior |
+| --- | --- |
+| sensor count | one digital PIR input |
+| output events | `motion_detected` only |
+| auto-capture | not implemented |
+| clear/reset event | not implemented |
+| per-trigger metadata | accepted timestamp only |

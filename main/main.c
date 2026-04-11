@@ -10,11 +10,28 @@
 
 #include "ethernet_service.h"
 #include "heartbeat_task.h"
+#include "ir_illuminator.h"
 #include "mqtt_service.h"
 #include "node_event.h"
 #include "publish_queue.h"
 #include "runtime_config.h"
 #include "topic_map.h"
+
+
+/**
+ *      ___________ ____ ________      _    ___      _                   _   __          __   
+ *     / ____/ ___// __ \__  /__ \    | |  / (_)____(_)___  ____        / | / /___  ____/ /__ 
+ *    / __/  \__ \/ /_/ //_ <__/ /____| | / / / ___/ / __ \/ __ \______/  |/ / __ \/ __  / _ \
+ *   / /___ ___/ / ____/__/ / __/_____/ |/ / (__  ) / /_/ / / / /_____/ /|  / /_/ / /_/ /  __/
+ *  /_____//____/_/   /____/____/     |___/_/____/_/\____/_/ /_/     /_/ |_/\____/\__,_/\___/ 
+ *
+ * --------------------------------------------------------------------------------------------
+ * Developped by @Sukikui
+ * Repository: github.com/Sukikui/ESP32-Vision-Node
+ * Copyright (c) 2026. Licensed under the MIT License.
+ * --------------------------------------------------------------------------------------------
+ */
+
 
 /* Main firmware entry point and high-level service wiring. */
 static const char *TAG = "app_main";
@@ -49,6 +66,9 @@ void app_main(void)
 
     /* Load persisted runtime overrides before starting services that consume them. */
     ESP_ERROR_CHECK(runtime_config_init());
+    ESP_ERROR_CHECK(ir_illuminator_init());
+    /* Apply the persisted IR policy early so an always-on illuminator mode takes effect before network startup. */
+    ESP_ERROR_CHECK(ir_illuminator_apply_runtime_config());
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     if (motion_detection_is_supported()) {

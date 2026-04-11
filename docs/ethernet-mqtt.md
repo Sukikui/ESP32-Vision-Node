@@ -84,6 +84,10 @@ The project exposes these build-time and default runtime configuration values th
 | `APP_MOTION_DEFAULT_ENABLED` | default runtime enabled state used before any NVS override exists |
 | `APP_MOTION_DEFAULT_WARMUP_MS` | default warm-up period used before any NVS override exists |
 | `APP_MOTION_DEFAULT_COOLDOWN_MS` | default cooldown period used before any NVS override exists |
+| `APP_HAS_IR_ILLUMINATOR` | build-time gate that includes IR illuminator support in this firmware |
+| `APP_IR_ILLUMINATOR_GPIO` | GPIO connected to the illuminator enable/input line |
+| `APP_IR_ILLUMINATOR_ACTIVE_HIGH` | drive the GPIO high to turn the illuminator on |
+| `APP_IR_ILLUMINATOR_DEFAULT_MODE` | default runtime IR policy used before any NVS override exists |
 
 MQTT broker discovery follows this convention:
 
@@ -106,6 +110,7 @@ The resolved versions are stored in `dependencies.lock`.
 | `main/main.c` | boot sequence and service startup |
 | `components/connectivity/ethernet_service.c` | Ethernet driver, netif attachment, link/IP state |
 | `components/detection/motion_detection.c` | PIR GPIO interrupt, warm-up, cooldown, and motion event emission |
+| `components/illumination/ir_illuminator.c` | IR illuminator GPIO output, runtime mode, and future capture coupling |
 | `components/runtime_config/runtime_config.c` | persisted runtime settings restored from NVS |
 | `components/messaging/mqtt_service.c` | MQTT client lifecycle and publish API |
 | `components/messaging/topic_map.c` | MQTT topic construction helpers |
@@ -122,22 +127,24 @@ The expected boot order is:
 
 1. initialize `nvs_flash`
 2. load persisted runtime overrides from NVS
-3. initialize `esp_netif`
-4. create the default event loop
-5. register the motion detection event handler if PIR support is compiled into this build
-6. initialize topic mapping from `APP_NODE_ID`
-7. initialize Ethernet service
-8. initialize and start the publish queue
-9. initialize PIR motion detection
-10. start Ethernet
-11. wait for DHCP IPv4 address
-12. read the DHCP gateway and derive the MQTT broker URI
-13. initialize MQTT
-14. start MQTT
-15. apply the restored heartbeat interval to the heartbeat task
-16. start PIR motion detection
-17. start the heartbeat task
-18. publish `boot_completed`
+3. initialize IR illuminator support
+4. apply the restored IR illuminator mode
+5. initialize `esp_netif`
+6. create the default event loop
+7. register the motion detection event handler if PIR support is compiled into this build
+8. initialize topic mapping from `APP_NODE_ID`
+9. initialize Ethernet service
+10. initialize and start the publish queue
+11. initialize PIR motion detection
+12. start Ethernet
+13. wait for DHCP IPv4 address
+14. read the DHCP gateway and derive the MQTT broker URI
+15. initialize MQTT
+16. start MQTT
+17. apply the restored heartbeat interval to the heartbeat task
+18. start PIR motion detection
+19. start the heartbeat task
+20. publish `boot_completed`
 
 ## MQTT Topic Catalog
 
@@ -276,7 +283,7 @@ Purpose:
 </tr>
 </tr>
 <tr>
-<td>Possible event values</td>
+<td>Possible <code>event</code> values</td>
 <td>
 <code>boot_completed</code><br>
 <code>config_updated</code><br>
@@ -302,12 +309,15 @@ For `config`, supported runtime values are validated together, committed to NVS 
 
 The `motion_*` runtime keys are only accepted when PIR support is compiled into the firmware via `APP_HAS_MOTION_DETECTION`.
 
+The `ir_illuminator_mode` runtime key is only accepted when IR illuminator support is compiled into the firmware via `APP_HAS_IR_ILLUMINATOR`.
+
 Currently persisted runtime config keys are:
 
 - `heartbeat_interval_s`
 - `motion_detection_enabled`
 - `motion_warmup_ms`
 - `motion_cooldown_ms`
+- `ir_illuminator_mode`
 
 <table>
 <tr>
@@ -354,7 +364,8 @@ Currently persisted runtime config keys are:
   "heartbeat_interval_s": 30,
   "motion_detection_enabled": true,
   "motion_warmup_ms": 30000,
-  "motion_cooldown_ms": 5000
+  "motion_cooldown_ms": 5000,
+  "ir_illuminator_mode": "capture"
 }
 ```
 
@@ -437,6 +448,7 @@ Purpose:
   "motion_detection_enabled": true,
   "motion_warmup_ms": 30000,
   "motion_cooldown_ms": 5000,
+  "ir_illuminator_mode": "capture",
   "updated": true
 }
 ```

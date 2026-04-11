@@ -67,8 +67,7 @@ env/
 compile_commands.json
 
 # IDE files
-.vscode/settings.json
-.vscode/c_cpp_properties.json
+.vscode/
 .idea/
 *.code-workspace
 

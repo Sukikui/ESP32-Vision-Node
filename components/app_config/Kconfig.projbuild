@@ -111,4 +111,42 @@ menu "Application Configuration"
         help
             Default minimum delay between two accepted motion triggers.
 
+    config APP_HAS_IR_ILLUMINATOR
+        bool "Build with IR illuminator support"
+        default n
+        help
+            Compile support for one GPIO-controlled IR illuminator into the
+            firmware for hardware variants that expose an IR light driver.
+
+    config APP_IR_ILLUMINATOR_GPIO
+        int "IR illuminator GPIO number"
+        default 11
+        depends on APP_HAS_IR_ILLUMINATOR
+        help
+            GPIO connected to the IR illuminator enable/input pin or to the
+            transistor/MOSFET gate that drives the illuminator.
+
+    config APP_IR_ILLUMINATOR_ACTIVE_HIGH
+        bool "IR illuminator is active high"
+        default y
+        depends on APP_HAS_IR_ILLUMINATOR
+        help
+            Enable if driving the GPIO high turns the illuminator on.
+
+    choice APP_IR_ILLUMINATOR_DEFAULT_MODE
+        prompt "Default IR illuminator mode"
+        default APP_IR_ILLUMINATOR_DEFAULT_MODE_OFF
+        depends on APP_HAS_IR_ILLUMINATOR
+        help
+            Default runtime policy used on first boot before any persisted NVS
+            override exists.
+
+        config APP_IR_ILLUMINATOR_DEFAULT_MODE_OFF
+            bool "Off"
+        config APP_IR_ILLUMINATOR_DEFAULT_MODE_ON
+            bool "Always on"
+        config APP_IR_ILLUMINATOR_DEFAULT_MODE_CAPTURE
+            bool "On during capture"
+    endchoice
+
 endmenu

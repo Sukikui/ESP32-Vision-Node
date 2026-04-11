@@ -14,6 +14,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "heartbeat_task.h"
+#include "ir_illuminator.h"
 #include "motion_detection.h"
 #include "mqtt_service.h"
 #include "node_event.h"
@@ -251,6 +252,7 @@ static void handle_ping_command(const char *request_id)
 static void handle_config_command(const char *request_id, const char *payload_in)
 {
     char payload[APP_JSON_PAYLOAD_MAX_LEN];
+    char ir_mode_text[16];
     runtime_config_patch_t patch = {0};
     bool updated = false;
     esp_err_t err = ESP_OK;
@@ -276,16 +278,28 @@ static void handle_config_command(const char *request_id, const char *payload_in
         patch.has_motion_cooldown_ms = true;
     }
 
+    if (extract_json_string_field(payload_in, "ir_illuminator_mode", ir_mode_text, sizeof(ir_mode_text))) {
+        if (runtime_config_parse_ir_illuminator_mode(ir_mode_text, &patch.ir_illuminator_mode)) {
+            patch.has_ir_illuminator_mode = true;
+        } else {
+            err = ESP_ERR_INVALID_ARG;
+        }
+    }
+
     /*
      * Persist all requested config keys in one NVS transaction so a failing cmd/config
      * never leaves behind a half-applied persistent state.
      */
-    err = runtime_config_apply_patch(&patch, true);
+    if (err == ESP_OK) {
+        err = runtime_config_apply_patch(&patch, true);
+    }
+
     if (err == ESP_OK) {
         updated = patch.has_heartbeat_interval_s
             || patch.has_motion_detection_enabled
             || patch.has_motion_warmup_ms
-            || patch.has_motion_cooldown_ms;
+            || patch.has_motion_cooldown_ms
+            || patch.has_ir_illuminator_mode;
 
         if (patch.has_heartbeat_interval_s) {
             err = heartbeat_task_set_interval_s(runtime_config_get_heartbeat_interval_s());
@@ -293,6 +307,10 @@ static void handle_config_command(const char *request_id, const char *payload_in
 
         if (err == ESP_OK && (patch.has_motion_detection_enabled || patch.has_motion_warmup_ms || patch.has_motion_cooldown_ms)) {
             err = motion_detection_apply_runtime_config();
+        }
+
+        if (err == ESP_OK && patch.has_ir_illuminator_mode) {
+            err = ir_illuminator_apply_runtime_config();
         }
 
         if (err != ESP_OK) {
@@ -305,25 +323,33 @@ static void handle_config_command(const char *request_id, const char *payload_in
     }
 
     if (err != ESP_OK) {
-        snprintf(payload,
-                 sizeof(payload),
-                 "{\"node_id\":\"%s\",\"ok\":false,\"error\":\"%s\",\"heartbeat_interval_s\":%" PRIu32 ",\"motion_detection_enabled\":%s,\"motion_warmup_ms\":%" PRIu32 ",\"motion_cooldown_ms\":%" PRIu32 "}",
-                 topic_map_get_node_id(),
-                 error_code,
-                 runtime_config_get_heartbeat_interval_s(),
-                 runtime_config_get_motion_detection_enabled() ? "true" : "false",
-                 runtime_config_get_motion_warmup_ms(),
-                 runtime_config_get_motion_cooldown_ms());
+        if (snprintf(payload,
+                     sizeof(payload),
+                     "{\"node_id\":\"%s\",\"ok\":false,\"error\":\"%s\",\"heartbeat_interval_s\":%" PRIu32 ",\"motion_detection_enabled\":%s,\"motion_warmup_ms\":%" PRIu32 ",\"motion_cooldown_ms\":%" PRIu32 ",\"ir_illuminator_mode\":\"%s\"}",
+                     topic_map_get_node_id(),
+                     error_code,
+                     runtime_config_get_heartbeat_interval_s(),
+                     runtime_config_get_motion_detection_enabled() ? "true" : "false",
+                     runtime_config_get_motion_warmup_ms(),
+                     runtime_config_get_motion_cooldown_ms(),
+                     runtime_config_ir_illuminator_mode_to_string(runtime_config_get_ir_illuminator_mode())) >= (int)sizeof(payload)) {
+            ESP_LOGW(TAG, "config error reply payload too large");
+            return;
+        }
     } else {
-        snprintf(payload,
-                 sizeof(payload),
-                 "{\"node_id\":\"%s\",\"ok\":true,\"heartbeat_interval_s\":%" PRIu32 ",\"motion_detection_enabled\":%s,\"motion_warmup_ms\":%" PRIu32 ",\"motion_cooldown_ms\":%" PRIu32 ",\"updated\":%s}",
-                 topic_map_get_node_id(),
-                 runtime_config_get_heartbeat_interval_s(),
-                 runtime_config_get_motion_detection_enabled() ? "true" : "false",
-                 runtime_config_get_motion_warmup_ms(),
-                 runtime_config_get_motion_cooldown_ms(),
-                 updated ? "true" : "false");
+        if (snprintf(payload,
+                     sizeof(payload),
+                     "{\"node_id\":\"%s\",\"ok\":true,\"heartbeat_interval_s\":%" PRIu32 ",\"motion_detection_enabled\":%s,\"motion_warmup_ms\":%" PRIu32 ",\"motion_cooldown_ms\":%" PRIu32 ",\"ir_illuminator_mode\":\"%s\",\"updated\":%s}",
+                     topic_map_get_node_id(),
+                     runtime_config_get_heartbeat_interval_s(),
+                     runtime_config_get_motion_detection_enabled() ? "true" : "false",
+                     runtime_config_get_motion_warmup_ms(),
+                     runtime_config_get_motion_cooldown_ms(),
+                     runtime_config_ir_illuminator_mode_to_string(runtime_config_get_ir_illuminator_mode()),
+                     updated ? "true" : "false") >= (int)sizeof(payload)) {
+            ESP_LOGW(TAG, "config success reply payload too large");
+            return;
+        }
         if (updated) {
             if (node_event_publish("config_updated") != ESP_OK) {
                 ESP_LOGW(TAG, "failed to publish config_updated event");
